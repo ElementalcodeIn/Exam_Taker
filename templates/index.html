@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CEH v13 Local Exam Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+
+        .prose pre {
+            background-color: #1e293b;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+        }
+
+        .prose code {
+            color: #38bdf8;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex flex-col font-sans">
+
+    <!-- Top Navigation Bar -->
+    <header
+        class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex justify-between items-center sticky top-0 z-30">
+        <div class="flex items-center space-x-3">
+            <span
+                class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-md font-mono font-bold text-sm">CEH
+                v13</span>
+            <h1 class="text-xl font-bold tracking-tight">Local Practice Exam Engine</h1>
+            <span id="dbCountBadge" class="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full">Loading
+                DB...</span>
+        </div>
+        <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-1.5 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-lg text-xs shadow-sm">
+                <span class="text-indigo-400 font-bold flex items-center gap-1">🤖 Model:</span>
+                <select id="headerModelSelect" onchange="updatePreferredModel(this.value)"
+                    class="bg-transparent text-slate-200 font-medium focus:outline-none cursor-pointer">
+                    <option value="auto">⚡ Auto (3.8 → 3.7 → 3.5)</option>
+                    <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
+                    <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
+                    <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                </select>
+            </div>
+            <button onclick="switchTab('dashboard')"
+                class="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-800 hover:bg-slate-700 transition">Exam
+                Dashboard</button>
+            <button onclick="switchTab('manage')"
+                class="px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 transition">+ Add
+                Questions</button>
+            <button onclick="openApiKeyModal()"
+                class="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">⚙️
+                Gemini API Key</button>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-6">
+
+        <!-- 1. DASHBOARD / START VIEW -->
+        <section id="view-dashboard" class="space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-lg">
+                <h2 class="text-2xl font-bold mb-2">Configure Practice Exam</h2>
+                <p class="text-slate-400 text-sm mb-6">Generates a randomized exam set from your local disk database
+                    (<code class="text-emerald-400">questions.json</code>).</p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <!-- Note Source Selection Dropdown -->
+                    <div class="bg-slate-800/60 p-4 rounded-lg border border-slate-700 flex flex-col justify-between">
+                        <div>
+                            <label for="examNoteSelect" class="block text-xs uppercase tracking-wider text-slate-400 mb-2 font-bold flex items-center justify-between">
+                                <span class="flex items-center gap-1.5 text-slate-300">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                    </svg>
+                                    CEH v13 Note Source
+                                </span>
+                                <span id="noteCountBadge" class="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-mono font-bold">Loading...</span>
+                            </label>
+                            <select id="examNoteSelect" onchange="onNoteSelectionChange()"
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-semibold text-white focus:outline-none focus:border-emerald-500 cursor-pointer shadow-inner">
+                                <option value="all">📚 All Notes (Combined Pool)</option>
+                            </select>
+                        </div>
+                        <p id="noteSourceHelp" class="text-xs text-slate-400 mt-2">Filter questions by specific CEH v13 study note.</p>
+                    </div>
+
+                    <!-- Number of Questions -->
+                    <div class="bg-slate-800/60 p-4 rounded-lg border border-slate-700 flex flex-col justify-between">
+                        <div>
+                            <label for="examQuestionCount" class="block text-xs uppercase tracking-wider text-slate-400 mb-2 font-bold text-slate-300">Number of Questions</label>
+                            <input type="number" id="examQuestionCount" value="125" min="1" max="500" oninput="updateStartExamBtnText()"
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-lg font-bold text-white focus:outline-none focus:border-emerald-500" />
+                        </div>
+                        <p id="questionCountHelp" class="text-xs text-slate-400 mt-2">Default CEH standard is 125 questions.</p>
+                    </div>
+
+                    <!-- Time Limit -->
+                    <div class="bg-slate-800/60 p-4 rounded-lg border border-slate-700 flex flex-col justify-between">
+                        <div>
+                            <label for="examDurationMin" class="block text-xs uppercase tracking-wider text-slate-400 mb-2 font-bold text-slate-300">Time Limit (Minutes)</label>
+                            <input type="number" id="examDurationMin" value="240" min="5" max="480"
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-lg font-bold text-white focus:outline-none focus:border-emerald-500" />
+                        </div>
+                        <p class="text-xs text-slate-400 mt-2">240 mins (4 hours) matches official exam.</p>
+                    </div>
+
+                    <!-- Mode Checkboxes -->
+                    <div class="bg-slate-800/60 p-4 rounded-lg border border-slate-700 flex flex-col justify-center space-y-3">
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input type="checkbox" id="instantFeedbackToggle"
+                                class="rounded text-emerald-500 focus:ring-0" />
+                            <span class="text-sm font-medium">Instant Answer & Explanation</span>
+                        </label>
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input type="checkbox" id="shuffleOptionsToggle"
+                                class="rounded text-emerald-500 focus:ring-0" />
+                            <span class="text-sm font-medium">Shuffle Option Order (A/B/C/D)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-4">
+                    <button id="startExamBtn" onclick="startNewExam()"
+                        class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-lg shadow-lg hover:shadow-emerald-600/30 transition flex items-center gap-2">
+                        <span>🚀 Start Practice Exam</span>
+                    </button>
+                    <button id="resumeExamBtn" onclick="resumeSavedExam()"
+                        class="hidden bg-amber-600 hover:bg-amber-500 text-white font-bold px-6 py-3 rounded-lg shadow-lg hover:shadow-amber-600/30 transition flex items-center gap-2">
+                        <span>⏯️ Resume Unfinished Exam</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. ACTIVE EXAM VIEW -->
+        <section id="view-exam" class="hidden grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- Left: Question Area -->
+            <div class="lg:col-span-3 space-y-6">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-center border-b border-slate-800 pb-4 mb-5">
+                        <div>
+                            <span id="qProgressText" class="text-sm font-mono text-emerald-400 font-bold">Question 1 of
+                                125</span>
+                            <span id="qSourceBadge"
+                                class="ml-3 text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded"></span>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <button onclick="toggleMarkReview()" id="markReviewBtn"
+                                class="text-xs px-3 py-1.5 rounded border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 transition">
+                                🚩 Mark for Review
+                            </button>
+                            <div class="bg-slate-800 px-3 py-1.5 rounded-lg font-mono text-sm font-bold text-sky-400"
+                                id="examTimerDisplay">04:00:00</div>
+                        </div>
+                    </div>
+
+                    <p id="activeQuestionText" class="text-lg font-medium leading-relaxed mb-6 text-slate-100"></p>
+
+                    <!-- Options List -->
+                    <div id="activeOptionsContainer" class="space-y-3"></div>
+
+                    <!-- Instant Feedback Box (if enabled) -->
+                    <div id="instantFeedbackBox"
+                        class="hidden mt-6 p-4 rounded-lg border bg-slate-800/80 border-slate-700 space-y-2">
+                        <div id="instantVerdict" class="font-bold text-sm"></div>
+                        <p id="instantExplanation" class="text-sm text-slate-300 leading-relaxed"></p>
+                        <button onclick="openAiModalForCurrent()"
+                            class="mt-2 inline-flex items-center space-x-1 text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-md font-medium">
+                            <span>✨ AI Explain with Gemini</span>
+                        </button>
+                    </div>
+
+                    <!-- Navigation Controls -->
+                    <div class="flex justify-between items-center mt-8 pt-4 border-t border-slate-800">
+                        <button onclick="prevQuestion()"
+                            class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-medium">←
+                            Previous</button>
+                        <div class="space-x-3">
+                            <button onclick="nextQuestion()"
+                                class="px-5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-sm font-bold">Next
+                                →</button>
+                            <button onclick="confirmSubmitExam()"
+                                class="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-bold">Submit
+                                & Finish Exam</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: 125-Question Palette -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 h-fit max-h-[80vh] flex flex-col">
+                <h3 class="font-bold text-sm mb-3 text-slate-300">Question Navigator</h3>
+                <div class="flex flex-wrap gap-2 text-xs text-slate-400 mb-4">
+                    <span class="flex items-center"><span
+                            class="w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1.5"></span>Answered</span>
+                    <span class="flex items-center"><span
+                            class="w-2.5 h-2.5 rounded-full bg-amber-500 mr-1.5"></span>Review</span>
+                    <span class="flex items-center"><span
+                            class="w-2.5 h-2.5 rounded-full bg-slate-700 mr-1.5"></span>Unanswered</span>
+                </div>
+                <div id="questionPaletteGrid" class="grid grid-cols-5 gap-2 overflow-y-auto pr-1"></div>
+            </div>
+        </section>
+
+        <!-- 3. RESULTS & REVIEW VIEW -->
+        <section id="view-results" class="hidden space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-lg">
+                <div
+                    class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold">Exam Results & Detailed Review</h2>
+                        <p id="resultSummarySub" class="text-slate-400 text-sm mt-1"></p>
+                    </div>
+                    <div class="flex space-x-3">
+                        <button onclick="retryWrongQuestions()" id="retryWrongBtn"
+                            class="bg-amber-600 hover:bg-amber-500 px-4 py-2 rounded-lg text-sm font-bold">
+                            🔁 Practice Wrong Questions Only
+                        </button>
+                        <button onclick="switchTab('dashboard')"
+                            class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg text-sm font-medium">
+                            New Exam
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Score Metrics -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
+                    <div class="bg-slate-800/60 p-4 rounded-lg border border-slate-700">
+                        <div class="text-xs text-slate-400 uppercase">Score Percentage</div>
+                        <div id="resPercent" class="text-3xl font-extrabold text-emerald-400 mt-1">0%</div>
+                    </div>
+                    <div class="bg-slate-800/60 p-4 rounded-lg border border-slate-700">
+                        <div class="text-xs text-slate-400 uppercase">Correct Answers</div>
+                        <div id="resCorrect" class="text-3xl font-extrabold text-sky-400 mt-1">0 / 125</div>
+                    </div>
+                    <div class="bg-slate-800/60 p-4 rounded-lg border border-slate-700">
+                        <div class="text-xs text-slate-400 uppercase">Wrong / Unanswered</div>
+                        <div id="resWrong" class="text-3xl font-extrabold text-rose-400 mt-1">0</div>
+                    </div>
+                    <div class="bg-slate-800/60 p-4 rounded-lg border border-slate-700">
+                        <div class="text-xs text-slate-400 uppercase">Status (75% Pass)</div>
+                        <div id="resStatus" class="text-2xl font-extrabold mt-1">--</div>
+                    </div>
+                </div>
+
+                <!-- Filter Buttons -->
+                <div class="flex space-x-2 mb-6">
+                    <button onclick="renderReviewList('all')"
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700">All
+                        Questions</button>
+                    <button onclick="renderReviewList('wrong')"
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-950/80 text-rose-300 border border-rose-700/50 hover:bg-rose-900/60">❌
+                        Wrong / Unanswered Only</button>
+                    <button onclick="renderReviewList('correct')"
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-700/50 hover:bg-emerald-900/60">✅
+                        Correct Only</button>
+                </div>
+
+                <!-- Review Cards Container -->
+                <div id="reviewListContainer" class="space-y-4"></div>
+            </div>
+        </section>
+
+        <!-- 4. ADD QUESTIONS / MANAGE DB VIEW -->
+        <section id="view-manage" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Left: Bulk Paste Raw Notes -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg flex flex-col">
+                <h2 class="text-xl font-bold mb-2">Bulk Paste Questions (Note Format)</h2>
+                <p class="text-xs text-slate-400 mb-4">
+                    Paste 1 or 100+ questions directly in your CEH note format (<code
+                        class="text-sky-400">1. Question... A. ... B. ... C. ... D. ... Correct Answer: X Explanation: ...</code>).
+                    Duplicates are automatically skipped!
+                </p>
+                <input id="bulkSourceInput" type="text" placeholder="Source Tag (e.g., CEH v13 Note 3)"
+                    class="mb-3 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+                <textarea id="bulkRawText" rows="12"
+                    placeholder="1. You have confirmed NFSv3 exports...&#10;A. Option A&#10;B. Option B&#10;C. Option C&#10;D. Option D&#10;Correct Answer: C Explanation: ..."
+                    class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm font-mono mb-4 focus:outline-none focus:border-indigo-500"></textarea>
+                <button onclick="submitBulkPaste()"
+                    class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-lg transition">
+                    📥 Parse & Save to Disk (questions.json)
+                </button>
+                <p id="bulkStatusMsg" class="text-xs mt-3 font-medium"></p>
+            </div>
+
+            <!-- Right: Single Question Form -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-4">
+                <h2 class="text-xl font-bold mb-2">Add Single Question Manually</h2>
+                <div>
+                    <label class="text-xs text-slate-400">Question Text</label>
+                    <textarea id="singleQ" rows="3"
+                        class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm mt-1"></textarea>
+                </div>
+                <div class="grid grid-cols-1 gap-2.5">
+                    <input id="singleA" placeholder="Option A"
+                        class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+                    <input id="singleB" placeholder="Option B"
+                        class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+                    <input id="singleC" placeholder="Option C"
+                        class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+                    <input id="singleD" placeholder="Option D"
+                        class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs text-slate-400">Correct Option</label>
+                        <select id="singleAns"
+                            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm mt-1">
+                            <option value="A">Option A</option>
+                            <option value="B">Option B</option>
+                            <option value="C">Option C</option>
+                            <option value="D">Option D</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400">Explanation</label>
+                    <textarea id="singleExp" rows="3"
+                        class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm mt-1"></textarea>
+                </div>
+                <button onclick="submitSingleQuestion()"
+                    class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition">
+                    💾 Save Question to Disk
+                </button>
+                <p id="singleStatusMsg" class="text-xs mt-2 font-medium"></p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- GEMINI AI EXPLAIN MODAL -->
+    <div id="aiModal" class="hidden fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+        <div
+            class="bg-slate-900 border border-slate-700 rounded-xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <div class="px-6 py-4 border-b border-slate-800 flex justify-between items-center">
+                <div class="flex items-center space-x-2.5">
+                    <span class="text-indigo-400 text-lg">✨</span>
+                    <h3 class="font-bold text-lg">Gemini AI Tutor Breakdown</h3>
+                    <span id="aiModelBadge" class="hidden text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 px-2.5 py-0.5 rounded-full font-mono"></span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <div class="flex items-center space-x-1.5 bg-slate-800 border border-slate-700 px-2.5 py-1 rounded-lg text-xs">
+                        <span class="text-indigo-400 font-medium">Model:</span>
+                        <select id="modalModelSelect" onchange="updatePreferredModel(this.value)"
+                            class="bg-transparent text-slate-200 focus:outline-none cursor-pointer">
+                            <option value="auto">⚡ Auto Fallback</option>
+                            <option value="gemini-3.8-flash">3.8 Flash</option>
+                            <option value="gemini-3.7-flash">3.7 Flash</option>
+                            <option value="gemini-3.5-flash">3.5 Flash</option>
+                        </select>
+                    </div>
+                    <button onclick="closeAiModal()" class="text-slate-400 hover:text-white text-xl">&times;</button>
+                </div>
+            </div>
+            <div id="aiModalBody"
+                class="p-6 overflow-y-auto prose prose-invert max-w-none text-sm leading-relaxed space-y-3">
+                Thinking...
+            </div>
+            <div class="p-4 border-t border-slate-800 flex flex-col gap-2.5 bg-slate-950 rounded-b-xl">
+                <div id="sttStatusBanner" class="hidden text-xs flex items-center gap-2 font-medium">
+                    <span class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                    </span>
+                    <span id="sttStatusText" class="text-amber-400">Listening... Speak into your microphone</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <input id="aiFollowUpInput" type="text" placeholder="Ask a follow-up about this tool, option, or CVE..."
+                        onkeydown="if(event.key === 'Enter') sendAiFollowUp()"
+                        class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500" />
+                    <button id="sttMicBtn" type="button" onclick="toggleSpeechToText()" title="Click to speak (Voice to Text)"
+                        class="px-3.5 py-2 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1.5 shadow-sm">
+                        <svg id="sttMicIcon" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4 0h8m-4-8a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3z" />
+                        </svg>
+                        <span id="sttBtnLabel">Speak</span>
+                    </button>
+                    <button onclick="sendAiFollowUp()"
+                        class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-bold transition">Ask Gemini</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API KEY MODAL -->
+    <div id="apiKeyModal" class="hidden fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-6 space-y-4">
+            <h3 class="font-bold text-lg">Configure Gemini API Key</h3>
+            <p class="text-xs text-slate-400">Your key is saved locally in <code
+                    class="text-emerald-400">config.json</code> on your computer and used for the ✨ AI Explain button.
+            </p>
+            <input id="apiKeyInput" type="password" placeholder="AIzaSy..."
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm" />
+            <div class="flex justify-end space-x-2">
+                <button onclick="document.getElementById('apiKeyModal').classList.add('hidden')"
+                    class="px-4 py-2 rounded-lg bg-slate-800 text-sm">Cancel</button>
+                <button onclick="saveApiKey()"
+                    class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-bold">Save Key</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let masterQuestions = [];
+        let availableNotes = [];
+        let currentExam = {
+            questions: [],
+            answers: {},      // index -> 'A'|'B'|'C'|'D'
+            flagged: {},      // index -> boolean
+            currentIndex: 0,
+            remainingSeconds: 14400,
+            instantFeedback: false,
+            timerInterval: null,
+            selectedNote: 'all',
+            selectedNoteTitle: 'All Notes Combined'
+        };
+        let activeAiQuestion = null;
+        let activeAiUserChoice = null;
+
+        function formatNoteName(filename) {
+            if (!filename) return "Unknown Note";
+            const cleaned = filename.replace(/\.(docx|txt|json)$/i, '').trim();
+            const cehMatch = cleaned.match(/ceh\s*v?(\d+)\s*note\s*(\d+)/i);
+            if (cehMatch) {
+                return `CEH v${cehMatch[1]} NOTE ${cehMatch[2]}`;
+            }
+            return cleaned;
+        }
+
+        function populateNoteDropdown(notes, totalQuestions) {
+            const select = document.getElementById('examNoteSelect');
+            if (!select) return;
+
+            const prevVal = select.value || 'all';
+            select.innerHTML = '';
+
+            // "All Notes" option
+            const allOpt = document.createElement('option');
+            allOpt.value = 'all';
+            allOpt.textContent = `📚 All Notes (Combined Pool — ${totalQuestions} Questions)`;
+            select.appendChild(allOpt);
+
+            // Each individual note
+            notes.forEach(note => {
+                const opt = document.createElement('option');
+                opt.value = note.id;
+                const displayName = formatNoteName(note.filename || note.id);
+                opt.textContent = `📄 ${displayName} (${note.count} Questions)`;
+                select.appendChild(opt);
+            });
+
+            // Restore previous choice if still available
+            const hasPrev = Array.from(select.options).some(o => o.value === prevVal);
+            select.value = hasPrev ? prevVal : 'all';
+
+            const countBadge = document.getElementById('noteCountBadge');
+            if (countBadge) {
+                countBadge.textContent = `${notes.length} Notes Available`;
+            }
+
+            onNoteSelectionChange();
+        }
+
+        function onNoteSelectionChange() {
+            const select = document.getElementById('examNoteSelect');
+            const selectedVal = select ? select.value : 'all';
+            const countInput = document.getElementById('examQuestionCount');
+            const noteHelp = document.getElementById('noteSourceHelp');
+            const qCountHelp = document.getElementById('questionCountHelp');
+
+            let availableCount = masterQuestions.length;
+            let noteName = 'All Notes';
+
+            if (selectedVal !== 'all') {
+                const noteObj = availableNotes.find(n => n.id === selectedVal);
+                if (noteObj) {
+                    availableCount = noteObj.count;
+                    noteName = formatNoteName(noteObj.filename || noteObj.id);
+                } else {
+                    availableCount = masterQuestions.filter(q => {
+                        const sources = q.sources || (q.source ? [q.source] : []);
+                        return sources.some(s => s && s.toLowerCase() === selectedVal.toLowerCase());
+                    }).length;
+                    noteName = formatNoteName(selectedVal);
+                }
+                if (noteHelp) {
+                    noteHelp.innerHTML = `Generating exam exclusively from <span class="text-emerald-400 font-semibold">${noteName}</span> (<span class="font-mono text-white font-bold">${availableCount}</span> questions available).`;
+                }
+            } else {
+                if (noteHelp) {
+                    noteHelp.innerHTML = `Generating from entire database (<span class="text-emerald-400 font-semibold font-mono">${availableCount}</span> unique questions across all notes).`;
+                }
+            }
+
+            if (countInput) {
+                countInput.max = availableCount;
+                const curVal = parseInt(countInput.value) || 125;
+                if (curVal > availableCount || curVal === 125 || curVal === 0) {
+                    countInput.value = Math.min(125, availableCount);
+                }
+            }
+
+            if (qCountHelp) {
+                qCountHelp.textContent = `Pool size in selected note: ${availableCount} questions.`;
+            }
+
+            updateStartExamBtnText();
+        }
+
+        function updateStartExamBtnText() {
+            const startBtn = document.getElementById('startExamBtn');
+            if (!startBtn) return;
+            const select = document.getElementById('examNoteSelect');
+            const selectedVal = select ? select.value : 'all';
+            const countInput = document.getElementById('examQuestionCount');
+            const count = parseInt(countInput ? countInput.value : 125) || 125;
+
+            let noteLabel = 'All Notes';
+            if (selectedVal !== 'all') {
+                const noteObj = availableNotes.find(n => n.id === selectedVal);
+                noteLabel = formatNoteName(noteObj ? (noteObj.filename || noteObj.id) : selectedVal);
+            }
+
+            startBtn.innerHTML = `<span>🚀 Start ${count}-Question Practice Exam (${noteLabel})</span>`;
+        }
+
+        async function fetchDatabase() {
+            const res = await fetch('/api/questions');
+            const data = await res.json();
+            masterQuestions = data.questions;
+            availableNotes = data.all_notes || [];
+            document.getElementById('dbCountBadge').textContent = `${data.total} Unique Questions on Disk`;
+            populateNoteDropdown(availableNotes, data.total);
+            checkSavedExam();
+        }
+
+        function switchTab(tab) {
+            ['dashboard', 'exam', 'results', 'manage'].forEach(v => {
+                document.getElementById(`view-${v}`).classList.add('hidden');
+            });
+            document.getElementById(`view-${tab}`).classList.remove('hidden');
+        }
+
+        function shuffleArray(arr) {
+            const copy = [...arr];
+            for (let i = copy.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [copy[i], copy[j]] = [copy[j], copy[i]];
+            }
+            return copy;
+        }
+
+        function startNewExam(customQuestionPool = null) {
+            if (masterQuestions.length === 0) {
+                alert("No questions in database yet! Drop your .docx files into raw_notes/ or use + Add Questions.");
+                return;
+            }
+            const select = document.getElementById('examNoteSelect');
+            const selectedNote = select ? select.value : 'all';
+            const requestedCount = parseInt(document.getElementById('examQuestionCount').value) || 125;
+            const durationMin = parseInt(document.getElementById('examDurationMin').value) || 240;
+            const instant = document.getElementById('instantFeedbackToggle').checked;
+            const shuffleOpts = document.getElementById('shuffleOptionsToggle').checked;
+
+            let sourcePool = masterQuestions;
+            let selectedNoteTitle = 'All Notes Combined';
+
+            if (customQuestionPool) {
+                sourcePool = customQuestionPool;
+                selectedNoteTitle = 'Practice / Retry Pool';
+            } else if (selectedNote !== 'all') {
+                sourcePool = masterQuestions.filter(q => {
+                    const sources = q.sources || (q.source ? [q.source] : []);
+                    return sources.some(s => s && s.toLowerCase() === selectedNote.toLowerCase());
+                });
+                const noteObj = availableNotes.find(n => n.id === selectedNote);
+                selectedNoteTitle = formatNoteName(noteObj ? (noteObj.filename || noteObj.id) : selectedNote);
+            }
+
+            if (sourcePool.length === 0) {
+                alert(`No questions found for the selected note: ${selectedNote}`);
+                return;
+            }
+
+            const count = Math.min(requestedCount, sourcePool.length);
+
+            let selected = shuffleArray(sourcePool).slice(0, count).map(q => {
+                const cloned = JSON.parse(JSON.stringify(q));
+                if (shuffleOpts) {
+                    const entries = shuffleArray(Object.entries(cloned.options));
+                    const letters = ['A', 'B', 'C', 'D'];
+                    const newOpts = {};
+                    let newCorrect = cloned.correctAnswer;
+                    entries.forEach(([oldLetter, text], idx) => {
+                        const mappedLetter = letters[idx];
+                        newOpts[mappedLetter] = text;
+                        if (oldLetter === cloned.correctAnswer) newCorrect = mappedLetter;
+                    });
+                    cloned.options = newOpts;
+                    cloned.correctAnswer = newCorrect;
+                }
+                return cloned;
+            });
+
+            clearInterval(currentExam.timerInterval);
+            currentExam = {
+                questions: selected,
+                answers: {},
+                flagged: {},
+                currentIndex: 0,
+                remainingSeconds: durationMin * 60,
+                instantFeedback: instant,
+                timerInterval: null,
+                selectedNote: selectedNote,
+                selectedNoteTitle: selectedNoteTitle
+            };
+
+            saveExamState();
+            switchTab('exam');
+            startTimer();
+            renderActiveQuestion();
+            renderPalette();
+        }
+
+        function startTimer() {
+            clearInterval(currentExam.timerInterval);
+            currentExam.timerInterval = setInterval(() => {
+                currentExam.remainingSeconds--;
+                if (currentExam.remainingSeconds <= 0) {
+                    clearInterval(currentExam.timerInterval);
+                    submitExam();
+                    return;
+                }
+                const hrs = String(Math.floor(currentExam.remainingSeconds / 3600)).padStart(2, '0');
+                const mins = String(Math.floor((currentExam.remainingSeconds % 3600) / 60)).padStart(2, '0');
+                const secs = String(currentExam.remainingSeconds % 60).padStart(2, '0');
+                document.getElementById('examTimerDisplay').textContent = `${hrs}:${mins}:${secs}`;
+            }, 1000);
+        }
+
+        function renderActiveQuestion() {
+            const idx = currentExam.currentIndex;
+            const q = currentExam.questions[idx];
+            const total = currentExam.questions.length;
+
+            document.getElementById('qProgressText').textContent = `Question ${idx + 1} of ${total}`;
+            const qSources = q.sources && q.sources.length ? q.sources : (q.source ? [q.source] : []);
+            const displaySource = qSources.map(formatNoteName).join(' • ') || 'Local DB';
+            document.getElementById('qSourceBadge').textContent = displaySource;
+            document.getElementById('activeQuestionText').textContent = q.question;
+
+            const markBtn = document.getElementById('markReviewBtn');
+            markBtn.textContent = currentExam.flagged[idx] ? '🚩 Marked for Review' : '🏳️ Mark for Review';
+
+            const container = document.getElementById('activeOptionsContainer');
+            container.innerHTML = '';
+
+            const chosen = currentExam.answers[idx];
+
+            ['A', 'B', 'C', 'D'].forEach(letter => {
+                const isSelected = chosen === letter;
+                const btn = document.createElement('button');
+                btn.className = `w-full text-left p-4 rounded-xl border transition flex items-start space-x-3 ${isSelected
+                        ? 'bg-emerald-950/60 border-emerald-500 text-white'
+                        : 'bg-slate-800/50 border-slate-700/80 hover:bg-slate-800 text-slate-200'
+                    }`;
+                btn.onclick = () => selectOption(letter);
+                btn.innerHTML = `
+          <span class="font-mono font-bold px-2.5 py-0.5 rounded ${isSelected ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-slate-300'}">${letter}</span>
+          <span class="flex-1 text-sm leading-relaxed">${q.options[letter]}</span>
+        `;
+                container.appendChild(btn);
+            });
+
+            const fbBox = document.getElementById('instantFeedbackBox');
+            if (currentExam.instantFeedback && chosen) {
+                fbBox.classList.remove('hidden');
+                const isRight = chosen === q.correctAnswer;
+                const verdict = document.getElementById('instantVerdict');
+                verdict.textContent = isRight ? `✅ Correct! (${q.correctAnswer})` : `❌ Incorrect — You chose ${chosen}, Correct Answer is ${q.correctAnswer}`;
+                verdict.className = `font-bold text-sm ${isRight ? 'text-emerald-400' : 'text-rose-400'}`;
+                document.getElementById('instantExplanation').textContent = q.explanation;
+            } else {
+                fbBox.classList.add('hidden');
+            }
+        }
+
+        function selectOption(letter) {
+            currentExam.answers[currentExam.currentIndex] = letter;
+            saveExamState();
+            renderActiveQuestion();
+            renderPalette();
+        }
+
+        function toggleMarkReview() {
+            const idx = currentExam.currentIndex;
+            currentExam.flagged[idx] = !currentExam.flagged[idx];
+            saveExamState();
+            renderActiveQuestion();
+            renderPalette();
+        }
+
+        function nextQuestion() {
+            if (currentExam.currentIndex < currentExam.questions.length - 1) {
+                currentExam.currentIndex++;
+                renderActiveQuestion();
+                renderPalette();
+            }
+        }
+
+        function prevQuestion() {
+            if (currentExam.currentIndex > 0) {
+                currentExam.currentIndex--;
+                renderActiveQuestion();
+                renderPalette();
+            }
+        }
+
+        function renderPalette() {
+            const grid = document.getElementById('questionPaletteGrid');
+            grid.innerHTML = '';
+            currentExam.questions.forEach((_, i) => {
+                const isCurrent = i === currentExam.currentIndex;
+                const isAnswered = !!currentExam.answers[i];
+                const isFlagged = !!currentExam.flagged[i];
+
+                let colorClass = 'bg-slate-800 text-slate-400 border-slate-700';
+                if (isAnswered) colorClass = 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50';
+                if (isFlagged) colorClass = 'bg-amber-500/30 text-amber-300 border-amber-500';
+
+                const btn = document.createElement('button');
+                btn.className = `py-1.5 rounded text-xs font-mono font-bold border ${colorClass} ${isCurrent ? 'ring-2 ring-sky-400' : ''}`;
+                btn.textContent = i + 1;
+                btn.onclick = () => {
+                    currentExam.currentIndex = i;
+                    renderActiveQuestion();
+                    renderPalette();
+                };
+                grid.appendChild(btn);
+            });
+        }
+
+        function confirmSubmitExam() {
+            const answeredCount = Object.keys(currentExam.answers).length;
+            const total = currentExam.questions.length;
+            if (confirm(`You have answered ${answeredCount} of ${total} questions. Finish and grade exam now?`)) {
+                submitExam();
+            }
+        }
+
+        function submitExam() {
+            clearInterval(currentExam.timerInterval);
+            localStorage.removeItem('ceh_active_exam');
+
+            const total = currentExam.questions.length;
+            let correct = 0;
+
+            currentExam.questions.forEach((q, idx) => {
+                if (currentExam.answers[idx] === q.correctAnswer) correct++;
+            });
+
+            const wrong = total - correct;
+            const percent = ((correct / total) * 100).toFixed(1);
+            const passed = percent >= 75.0;
+
+            document.getElementById('resPercent').textContent = `${percent}%`;
+            document.getElementById('resCorrect').textContent = `${correct} / ${total}`;
+            document.getElementById('resWrong').textContent = `${wrong}`;
+            const statusEl = document.getElementById('resStatus');
+            statusEl.textContent = passed ? 'PASSED 🏆' : 'NEEDS REVIEW 📚';
+            statusEl.className = `text-2xl font-extrabold mt-1 ${passed ? 'text-emerald-400' : 'text-rose-400'}`;
+
+            const noteTitle = currentExam.selectedNoteTitle || (currentExam.selectedNote === 'all' ? 'All Notes Combined' : 'Practice Exam');
+            const subSummary = document.getElementById('resultSummarySub');
+            if (subSummary) {
+                subSummary.textContent = `Generated from ${noteTitle} • ${correct} of ${total} answered correctly (${percent}%)`;
+            }
+
+            switchTab('results');
+            renderReviewList('all');
+        }
+
+        function renderReviewList(filter) {
+            const container = document.getElementById('reviewListContainer');
+            container.innerHTML = '';
+
+            currentExam.questions.forEach((q, idx) => {
+                const userAns = currentExam.answers[idx] || null;
+                const isCorrect = userAns === q.correctAnswer;
+
+                if (filter === 'wrong' && isCorrect) return;
+                if (filter === 'correct' && !isCorrect) return;
+
+                const card = document.createElement('div');
+                card.className = `p-6 rounded-xl border ${isCorrect ? 'bg-slate-900/90 border-emerald-500/30' : 'bg-slate-900/90 border-rose-500/40'
+                    } space-y-4`;
+
+                let optionsHtml = '';
+                ['A', 'B', 'C', 'D'].forEach(letter => {
+                    let badge = '';
+                    let style = 'bg-slate-800/40 border-slate-700/60 text-slate-300';
+                    if (letter === q.correctAnswer) {
+                        style = 'bg-emerald-950/60 border-emerald-500/70 text-emerald-200 font-medium';
+                        badge = '<span class="ml-auto text-xs font-bold text-emerald-400">✓ Correct Answer</span>';
+                    } else if (letter === userAns && !isCorrect) {
+                        style = 'bg-rose-950/60 border-rose-500/70 text-rose-200';
+                        badge = '<span class="ml-auto text-xs font-bold text-rose-400">✗ Your Choice</span>';
+                    }
+                    optionsHtml += `
+            <div class="p-3 rounded-lg border text-sm flex items-center gap-3 ${style}">
+              <span class="font-mono font-bold">${letter}.</span>
+              <span>${q.options[letter]}</span>
+              ${badge}
+            </div>
+          `;
+                });
+
+                card.innerHTML = `
+          <div class="flex justify-between items-start gap-4">
+            <div class="space-y-1">
+              <span class="text-xs font-mono font-bold px-2 py-0.5 rounded ${isCorrect ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}">
+                Q${idx + 1} • ${isCorrect ? 'CORRECT' : (userAns ? `WRONG (You picked ${userAns})` : 'UNANSWERED')}
+              </span>
+              <h4 class="font-semibold text-base text-white pt-1">${q.question}</h4>
+            </div>
+            <button onclick="openAiModal(${idx})" class="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3.5 py-2 rounded-lg shadow transition">
+              ✨ AI Explain
+            </button>
+          </div>
+          <div class="grid grid-cols-1 gap-2">${optionsHtml}</div>
+          <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-4 text-xs text-slate-300 leading-relaxed">
+            <strong class="text-sky-400 block mb-1">Official Note Explanation:</strong>
+            ${q.explanation}
+          </div>
+        `;
+                container.appendChild(card);
+            });
+        }
+
+        function retryWrongQuestions() {
+            const wrongPool = currentExam.questions.filter((q, idx) => currentExam.answers[idx] !== q.correctAnswer);
+            if (wrongPool.length === 0) {
+                alert("You got 100% correct! No wrong questions to retry.");
+                return;
+            }
+            startNewExam(wrongPool);
+        }
+
+        // Preferred Model Management
+        function getPreferredModel() {
+            return localStorage.getItem('ceh_gemini_model') || 'auto';
+        }
+
+        function updatePreferredModel(model) {
+            localStorage.setItem('ceh_gemini_model', model);
+            const headerSelect = document.getElementById('headerModelSelect');
+            const modalSelect = document.getElementById('modalModelSelect');
+            if (headerSelect && headerSelect.value !== model) headerSelect.value = model;
+            if (modalSelect && modalSelect.value !== model) modalSelect.value = model;
+        }
+
+        function initPreferredModel() {
+            const saved = getPreferredModel();
+            const headerSelect = document.getElementById('headerModelSelect');
+            const modalSelect = document.getElementById('modalModelSelect');
+            if (headerSelect) headerSelect.value = saved;
+            if (modalSelect) modalSelect.value = saved;
+        }
+
+        // AI Modal Functions
+        function openAiModalForCurrent() {
+            openAiModal(currentExam.currentIndex);
+        }
+
+        async function openAiModal(questionIdx) {
+            activeAiQuestion = currentExam.questions[questionIdx];
+            activeAiUserChoice = currentExam.answers[questionIdx] || "Unanswered";
+
+            document.getElementById('aiModal').classList.remove('hidden');
+            const badge = document.getElementById('aiModelBadge');
+            if (badge) badge.classList.add('hidden');
+
+            const currentModel = getPreferredModel();
+            const displayModel = currentModel === 'auto' ? 'Gemini (Auto Fallback)' : currentModel;
+
+            const body = document.getElementById('aiModalBody');
+            body.innerHTML = `<div class="animate-pulse text-indigo-400 font-medium">✨ Querying ${displayModel} for deep technical breakdown...</div>`;
+
+            // Reset Voice UI & input
+            const input = document.getElementById('aiFollowUpInput');
+            if (input) input.value = '';
+            hideVoiceStatus();
+            updateVoiceBtnUi(false);
+
+            await requestAiExplanation("");
+        }
+
+        async function sendAiFollowUp() {
+            if (isVoiceActive) {
+                await stopVoiceCapture(true);
+            }
+            const input = document.getElementById('aiFollowUpInput');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            const body = document.getElementById('aiModalBody');
+            body.innerHTML += `<hr class="border-slate-700 my-4"><div class="text-sky-400 font-bold text-xs">You asked: ${text}</div><div id="aiFollowLoading" class="text-indigo-400 text-xs animate-pulse">Thinking...</div>`;
+            await requestAiExplanation(text, true);
+        }
+
+        async function requestAiExplanation(followUpText, append = false) {
+            const body = document.getElementById('aiModalBody');
+            const modelToUse = getPreferredModel();
+            const res = await fetch('/api/ai-explain', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    question: activeAiQuestion,
+                    userChoice: activeAiUserChoice,
+                    followUp: followUpText,
+                    model: modelToUse
+                })
+            });
+            const data = await res.json();
+            const loader = document.getElementById('aiFollowLoading');
+            if (loader) loader.remove();
+
+            if (data.error) {
+                body.innerHTML = `<div class="text-rose-400 font-bold">${data.error}</div>`;
+            } else {
+                if (data.modelUsed) {
+                    const badge = document.getElementById('aiModelBadge');
+                    if (badge) {
+                        badge.classList.remove('hidden');
+                        badge.textContent = `Used: ${data.modelUsed}`;
+                        badge.title = `Answered using ${data.modelUsed}`;
+                    }
+                }
+                const html = marked.parse(data.explanation);
+                if (append) {
+                    body.innerHTML += `<div class="mt-2">${html}</div>`;
+                } else {
+                    body.innerHTML = html;
+                }
+            }
+        }
+
+        function closeAiModal() {
+            if (isVoiceActive) {
+                stopVoiceCapture(true);
+            }
+            document.getElementById('aiModal').classList.add('hidden');
+        }
+
+        // Resilient Voice-to-Text System (MediaRecorder + Web Speech API + Gemini AI Audio Fallback)
+        let isVoiceActive = false;
+        let voiceStream = null;
+        let voiceRecorder = null;
+        let voiceChunks = [];
+        let liveRecognition = null;
+        let liveTranscript = '';
+        let baseInputText = '';
+        let voiceTimeout = null;
+
+        async function toggleSpeechToText() {
+            if (isVoiceActive) {
+                await stopVoiceCapture(false);
+            } else {
+                await startVoiceCapture();
+            }
+        }
+
+        async function startVoiceCapture() {
+            const input = document.getElementById('aiFollowUpInput');
+            baseInputText = input.value.trim() ? input.value.trim() + ' ' : '';
+            liveTranscript = '';
+            voiceChunks = [];
+
+            // 1. Explicitly request microphone stream
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("Your browser does not support microphone audio capture.");
+                }
+                voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (err) {
+                console.error("Microphone access error:", err);
+                let userMsg = "Microphone access blocked. Click the lock or settings icon in the address bar to allow mic access.";
+                if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                    userMsg = "No microphone hardware found on your computer.";
+                }
+                showVoiceStatus(userMsg, "error");
+                return;
+            }
+
+            isVoiceActive = true;
+            updateVoiceBtnUi(true);
+            showVoiceStatus("🎙️ Listening... Speak your question now. Click 'Stop Speaking' when done.", "listening");
+
+            // 2. Initialize MediaRecorder (failsafe audio capture)
+            try {
+                let options = {};
+                if (MediaRecorder.isTypeSupported('audio/webm')) options = { mimeType: 'audio/webm' };
+                else if (MediaRecorder.isTypeSupported('audio/mp4')) options = { mimeType: 'audio/mp4' };
+                else if (MediaRecorder.isTypeSupported('audio/ogg')) options = { mimeType: 'audio/ogg' };
+
+                voiceRecorder = new MediaRecorder(voiceStream, options);
+                voiceRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) voiceChunks.push(e.data);
+                };
+                voiceRecorder.start(250);
+            } catch (recErr) {
+                console.warn("MediaRecorder init warning:", recErr);
+            }
+
+            // 3. Try Web Speech API for live transcription if supported
+            const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRec) {
+                try {
+                    liveRecognition = new SpeechRec();
+                    liveRecognition.continuous = true;
+                    liveRecognition.interimResults = true;
+                    liveRecognition.lang = 'en-US';
+
+                    liveRecognition.onresult = (event) => {
+                        let finalTxt = '';
+                        let interimTxt = '';
+                        for (let i = 0; i < event.results.length; ++i) {
+                            if (event.results[i].isFinal) finalTxt += event.results[i][0].transcript;
+                            else interimTxt += event.results[i][0].transcript;
+                        }
+                        liveTranscript = (finalTxt + ' ' + interimTxt).trim();
+                        input.value = baseInputText + liveTranscript;
+                    };
+
+                    liveRecognition.onerror = (e) => {
+                        console.warn("Web Speech API note (will use Gemini audio capture):", e.error);
+                    };
+
+                    liveRecognition.onend = () => {
+                        // If Web Speech API ends prematurely, MediaRecorder keeps recording cleanly!
+                    };
+
+                    liveRecognition.start();
+                } catch (e) {
+                    console.warn("Web Speech API start error:", e);
+                }
+            }
+
+            // Auto-stop after 40 seconds to prevent hanging
+            voiceTimeout = setTimeout(() => {
+                if (isVoiceActive) stopVoiceCapture(false);
+            }, 40000);
+        }
+
+        async function stopVoiceCapture(cancel = false) {
+            if (!isVoiceActive && !voiceStream) return;
+            isVoiceActive = false;
+            clearTimeout(voiceTimeout);
+
+            // Stop Web Speech
+            if (liveRecognition) {
+                try { liveRecognition.stop(); } catch (e) {}
+                liveRecognition = null;
+            }
+
+            if (cancel) {
+                if (voiceRecorder && voiceRecorder.state !== 'inactive') {
+                    try { voiceRecorder.stop(); } catch (e) {}
+                }
+                releaseVoiceStream();
+                updateVoiceBtnUi(false);
+                hideVoiceStatus();
+                return;
+            }
+
+            updateVoiceBtnUi(false, true); // Loading state
+
+            // Stop MediaRecorder and process
+            if (voiceRecorder && voiceRecorder.state !== 'inactive') {
+                showVoiceStatus("✨ Transcribing your speech with Gemini AI...", "transcribing");
+
+                await new Promise((resolve) => {
+                    voiceRecorder.onstop = resolve;
+                    try { voiceRecorder.stop(); } catch (e) { resolve(); }
+                });
+            }
+
+            releaseVoiceStream();
+
+            const input = document.getElementById('aiFollowUpInput');
+
+            // If Web Speech already captured complete text, we use it directly!
+            if (liveTranscript && liveTranscript.trim().length > 3) {
+                input.value = (baseInputText + liveTranscript).trim();
+                showVoiceStatus("✅ Voice recognized! Review and click 'Ask Gemini'", "success");
+                updateVoiceBtnUi(false);
+                setTimeout(hideVoiceStatus, 4000);
+                return;
+            }
+
+            // Fallback: Send recorded audio to Gemini /api/transcribe
+            if (voiceChunks.length > 0) {
+                const currentModel = getPreferredModel();
+                showVoiceStatus(`✨ Transcribing audio with Gemini (${currentModel})...`, "transcribing");
+                try {
+                    const mime = (voiceRecorder && voiceRecorder.mimeType) || 'audio/webm';
+                    const blob = new Blob(voiceChunks, { type: mime });
+                    const formData = new FormData();
+                    formData.append('audio', blob, 'recording.webm');
+                    formData.append('model', currentModel);
+
+                    const res = await fetch('/api/transcribe', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+
+                    if (data.transcript && data.transcript.trim()) {
+                        input.value = (baseInputText + data.transcript).trim();
+                        const usedNotice = data.modelUsed ? ` (via ${data.modelUsed})` : '';
+                        showVoiceStatus(`✅ Transcribed${usedNotice}! Review and click 'Ask Gemini'`, "success");
+                        setTimeout(hideVoiceStatus, 4000);
+                    } else if (data.error) {
+                        showVoiceStatus(`❌ Transcription error: ${data.error}`, "error");
+                    } else {
+                        showVoiceStatus("⚠️ No clear speech was detected. Please try again.", "error");
+                    }
+                } catch (err) {
+                    console.error("Transcription fetch error:", err);
+                    showVoiceStatus("❌ Failed to reach transcription service.", "error");
+                }
+            } else {
+                showVoiceStatus("⚠️ No audio data was recorded.", "error");
+            }
+
+            updateVoiceBtnUi(false);
+        }
+
+        function releaseVoiceStream() {
+            if (voiceStream) {
+                try {
+                    voiceStream.getTracks().forEach(track => track.stop());
+                } catch (e) {}
+                voiceStream = null;
+            }
+        }
+
+        function updateVoiceBtnUi(recording, transcribing = false) {
+            const micBtn = document.getElementById('sttMicBtn');
+            const btnLabel = document.getElementById('sttBtnLabel');
+            if (!micBtn || !btnLabel) return;
+
+            if (transcribing) {
+                micBtn.disabled = true;
+                micBtn.className = "px-3.5 py-2 rounded-lg text-sm font-semibold bg-slate-800 text-sky-400 border border-sky-500/50 flex items-center gap-1.5 shadow-sm opacity-80 cursor-wait";
+                btnLabel.textContent = "Transcribing...";
+            } else if (recording) {
+                micBtn.disabled = false;
+                micBtn.className = "px-3.5 py-2 rounded-lg text-sm font-semibold bg-rose-600 hover:bg-rose-500 text-white border border-rose-500 flex items-center gap-1.5 shadow-lg animate-pulse";
+                btnLabel.textContent = "Stop Speaking";
+            } else {
+                micBtn.disabled = false;
+                micBtn.className = "px-3.5 py-2 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition flex items-center gap-1.5 shadow-sm";
+                btnLabel.textContent = "Speak";
+            }
+        }
+
+        function showVoiceStatus(msg, type = "listening") {
+            const banner = document.getElementById('sttStatusBanner');
+            const statusText = document.getElementById('sttStatusText');
+            if (!banner || !statusText) return;
+
+            banner.classList.remove('hidden');
+            statusText.textContent = msg;
+
+            if (type === "error") {
+                statusText.className = "text-rose-400 font-medium";
+            } else if (type === "transcribing") {
+                statusText.className = "text-sky-400 font-medium animate-pulse";
+            } else if (type === "success") {
+                statusText.className = "text-emerald-400 font-medium";
+            } else {
+                statusText.className = "text-amber-400 font-medium";
+            }
+        }
+
+        function hideVoiceStatus() {
+            const banner = document.getElementById('sttStatusBanner');
+            if (banner) banner.classList.add('hidden');
+        }
+
+        // Add Questions & API Key
+        async function submitBulkPaste() {
+            const rawText = document.getElementById('bulkRawText').value;
+            const source = document.getElementById('bulkSourceInput').value || 'Bulk Paste';
+            const status = document.getElementById('bulkStatusMsg');
+            status.textContent = "Parsing and saving to disk...";
+            status.className = "text-xs mt-3 text-sky-400";
+
+            const res = await fetch('/api/questions/bulk-import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rawText, source })
+            });
+            const data = await res.json();
+            if (data.error) {
+                status.textContent = `❌ ${data.error}`;
+                status.className = "text-xs mt-3 text-rose-400";
+            } else {
+                status.textContent = `✅ ${data.message}`;
+                status.className = "text-xs mt-3 text-emerald-400";
+                document.getElementById('bulkRawText').value = '';
+                fetchDatabase();
+            }
+        }
+
+        async function submitSingleQuestion() {
+            const payload = {
+                question: document.getElementById('singleQ').value,
+                options: {
+                    A: document.getElementById('singleA').value,
+                    B: document.getElementById('singleB').value,
+                    C: document.getElementById('singleC').value,
+                    D: document.getElementById('singleD').value
+                },
+                correctAnswer: document.getElementById('singleAns').value,
+                explanation: document.getElementById('singleExp').value
+            };
+            const status = document.getElementById('singleStatusMsg');
+            const res = await fetch('/api/questions/add-single', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.error) {
+                status.textContent = `❌ ${data.error}`;
+                status.className = "text-xs mt-2 text-rose-400";
+            } else {
+                status.textContent = `✅ ${data.message}`;
+                status.className = "text-xs mt-2 text-emerald-400";
+                fetchDatabase();
+            }
+        }
+
+        function openApiKeyModal() {
+            document.getElementById('apiKeyModal').classList.remove('hidden');
+        }
+
+        async function saveApiKey() {
+            const apiKey = document.getElementById('apiKeyInput').value;
+            await fetch('/api/config/apikey', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ apiKey })
+            });
+            document.getElementById('apiKeyModal').classList.add('hidden');
+            alert("Gemini API key saved to disk!");
+        }
+
+        // State Persistence
+        function saveExamState() {
+            const stateToSave = { ...currentExam, timerInterval: null };
+            localStorage.setItem('ceh_active_exam', JSON.stringify(stateToSave));
+        }
+
+        function checkSavedExam() {
+            const saved = localStorage.getItem('ceh_active_exam');
+            const btn = document.getElementById('resumeExamBtn');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    btn.classList.remove('hidden');
+                    const noteLabel = parsed.selectedNoteTitle ? ` (${parsed.selectedNoteTitle})` : '';
+                    btn.innerHTML = `<span>⏯️ Resume Unfinished Exam${noteLabel}</span>`;
+                } catch(e) {
+                    btn.classList.remove('hidden');
+                }
+            } else {
+                btn.classList.add('hidden');
+            }
+        }
+
+        function resumeSavedExam() {
+            const saved = JSON.parse(localStorage.getItem('ceh_active_exam'));
+            if (!saved) return;
+            currentExam = saved;
+            switchTab('exam');
+            startTimer();
+            renderActiveQuestion();
+            renderPalette();
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initPreferredModel();
+            fetchDatabase();
+        });
+    </script>
+</body>
+
+</html>
