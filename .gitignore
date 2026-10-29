@@ -2,7 +2,7 @@
 .env
 config.json
 
-# Python cache & artifacts
+# Python cache & build artifacts
 __pycache__/
 *.py[cod]
 *$py.class

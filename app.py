@@ -2,34 +2,20 @@ import os
 import re
 import json
 import hashlib
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
 from docx import Document
 from google import genai
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "ceh-study-secret-session-key-v13")
 
 DB_FILE = "questions.json"
 RAW_NOTES_DIR = "raw_notes"
 CONFIG_FILE = "config.json"
+EXAM_PIN = os.environ.get("EXAM_PIN", "").strip()
 
 os.makedirs(RAW_NOTES_DIR, exist_ok=True)
 os.makedirs("templates", exist_ok=True)
-
-def load_dotenv():
-    """Loads key=value pairs from a local .env file into os.environ if present."""
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if os.path.exists(env_path):
-        try:
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
-        except Exception:
-            pass
-
-load_dotenv()
 
 
 def normalize_text(text):
@@ -149,19 +135,69 @@ def sync_raw_notes_folder():
 
 
 def get_api_key():
-    # Priority 1: Environment variable (standard for cloud hosting like Render)
+    # Priority 1: Environment variable (standard for cloud platforms like Render)
     env_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if env_key:
         return env_key
-
-    # Priority 2: Local config.json file (for local development fallback)
+    # Priority 2: Local config.json file
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            with open(CONFIG_FILE, "r") as f:
                 return json.load(f).get("gemini_api_key", "").strip()
         except Exception:
             pass
     return ""
+
+
+@app.before_request
+def require_pin_auth():
+    """Protects the API and app from unauthorized public access if EXAM_PIN is set."""
+    if not EXAM_PIN:
+        return None
+
+    # Allowed endpoints without entering PIN
+    allowed_endpoints = ("index", "auth_status", "auth_login", "static")
+    if request.endpoint in allowed_endpoints:
+        return None
+
+    # Verify session or authorization header
+    if session.get("authenticated") or request.headers.get("X-Exam-Pin") == EXAM_PIN:
+        return None
+
+    return jsonify({
+        "error": "Authentication required. Please enter your personal exam PIN.",
+        "authRequired": True
+    }), 401
+
+
+@app.route("/api/auth/status", methods=["GET"])
+def auth_status():
+    is_required = bool(EXAM_PIN)
+    is_authed = (not is_required) or session.get("authenticated", False)
+    return jsonify({
+        "pinRequired": is_required,
+        "authenticated": is_authed
+    })
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    if not EXAM_PIN:
+        session["authenticated"] = True
+        return jsonify({"success": True, "message": "No PIN required."})
+
+    data = request.json or {}
+    provided_pin = str(data.get("pin", "")).strip()
+    if provided_pin == EXAM_PIN:
+        session["authenticated"] = True
+        return jsonify({"success": True, "message": "Access granted!"})
+    return jsonify({"error": "Incorrect PIN. Access denied."}), 403
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    session.pop("authenticated", None)
+    return jsonify({"success": True, "message": "Logged out."})
 
 
 @app.route("/")
@@ -291,13 +327,9 @@ def bulk_import_questions():
 @app.route("/api/config/apikey", methods=["POST"])
 def save_api_key():
     api_key = request.json.get("apiKey", "").strip()
-    os.environ["GEMINI_API_KEY"] = api_key
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump({"gemini_api_key": api_key}, f)
-    except Exception:
-        pass
-    return jsonify({"message": "Gemini API Key updated successfully!"})
+    with open(CONFIG_FILE, "w") as f:
+        json.dump({"gemini_api_key": api_key}, f)
+    return jsonify({"message": "Gemini API Key saved locally to disk!"})
 
 
 SUPPORTED_MODELS = [
@@ -426,10 +458,21 @@ def transcribe_audio():
         return jsonify({"error": f"Gemini transcription error: {str(e)}"}), 500
 
 
+# Initial database preparation
+try:
+    _total, _newly_added = sync_raw_notes_folder()
+    print(f"[*] Database initialized: {_total} questions ({_newly_added} newly imported from raw_notes/).")
+except Exception as _e:
+    print(f"[!] Note sync warning: {_e}")
+
+
 if __name__ == "__main__":
-    total, newly_added = sync_raw_notes_folder()
     port = int(os.environ.get("PORT", 5000))
-    is_production = os.environ.get("RENDER") is not None
-    print(f"[*] Database ready: {total} total unique questions ({newly_added} newly imported from raw_notes/)")
-    print(f"[*] Server listening on port: {port}")
-    app.run(host="0.0.0.0", port=port, debug=not is_production)
+    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() in ("true", "1")
+    print(f"[*] CEH Practice Exam Engine starting on port {port}...")
+    print(f"[*] Access URL: http://127.0.0.1:{port}")
+    if EXAM_PIN:
+        print("[*] Security: Access PIN protection is ACTIVE.")
+    else:
+        print("[*] Security: No EXAM_PIN configured (Public / Open mode).")
+    app.run(host="0.0.0.0", port=port, debug=debug_mode)

@@ -409,6 +409,38 @@
         </div>
     </div>
 
+    <!-- STUDY PIN ACCESS MODAL -->
+    <div id="pinModal" class="hidden fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 text-xl font-bold">
+                    🔒
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-white">Private Study Session</h3>
+                    <p class="text-xs text-slate-400">Enter your personal access PIN to unlock</p>
+                </div>
+            </div>
+            <div>
+                <label for="pinInput" class="block text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">Access PIN</label>
+                <input id="pinInput" type="password" placeholder="••••••••"
+                    onkeydown="if(event.key === 'Enter') submitStudyPin()"
+                    class="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-lg font-mono text-center tracking-widest text-white focus:outline-none focus:border-indigo-500 shadow-inner" />
+                <p id="pinErrorMsg" class="hidden text-xs text-rose-400 mt-2 font-medium flex items-center gap-1"></p>
+            </div>
+            <div class="flex items-center justify-between text-xs text-slate-400">
+                <label class="flex items-center space-x-2 cursor-pointer">
+                    <input type="checkbox" id="rememberPinCheck" checked class="rounded text-indigo-500 focus:ring-0" />
+                    <span>Remember on this device</span>
+                </label>
+            </div>
+            <button onclick="submitStudyPin()" id="unlockPinBtn"
+                class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-lg shadow-lg hover:shadow-indigo-600/30 transition flex items-center justify-center gap-2">
+                <span>🔓 Unlock Exam Engine</span>
+            </button>
+        </div>
+    </div>
+
     <script>
         let masterQuestions = [];
         let availableNotes = [];
@@ -1300,9 +1332,95 @@
             renderPalette();
         }
 
+        // Authentication and PIN Verification
+        async function checkAuthAndInit() {
+            try {
+                const res = await fetch('/api/auth/status');
+                const data = await res.json();
+                if (data.pinRequired && !data.authenticated) {
+                    const savedPin = localStorage.getItem('ceh_study_pin');
+                    if (savedPin) {
+                        const autoLoginRes = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ pin: savedPin })
+                        });
+                        const loginData = await autoLoginRes.json();
+                        if (loginData.success) {
+                            fetchDatabase();
+                            return;
+                        }
+                    }
+                    showPinModal();
+                    return;
+                }
+            } catch (e) {
+                console.error("Auth check error:", e);
+            }
+            fetchDatabase();
+        }
+
+        function showPinModal(errorMsg = '') {
+            const modal = document.getElementById('pinModal');
+            const pinInput = document.getElementById('pinInput');
+            const errEl = document.getElementById('pinErrorMsg');
+            if (modal) modal.classList.remove('hidden');
+            if (pinInput) {
+                pinInput.value = '';
+                setTimeout(() => pinInput.focus(), 100);
+            }
+            if (errEl) {
+                if (errorMsg) {
+                    errEl.textContent = `❌ ${errorMsg}`;
+                    errEl.classList.remove('hidden');
+                } else {
+                    errEl.classList.add('hidden');
+                }
+            }
+        }
+
+        async function submitStudyPin() {
+            const pin = document.getElementById('pinInput').value.trim();
+            const remember = document.getElementById('rememberPinCheck').checked;
+            const unlockBtn = document.getElementById('unlockPinBtn');
+
+            if (!pin) {
+                showPinModal("Please enter your PIN");
+                return;
+            }
+
+            unlockBtn.disabled = true;
+            unlockBtn.innerHTML = '<span>Verifying...</span>';
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    if (remember) {
+                        localStorage.setItem('ceh_study_pin', pin);
+                    } else {
+                        localStorage.removeItem('ceh_study_pin');
+                    }
+                    document.getElementById('pinModal').classList.add('hidden');
+                    fetchDatabase();
+                } else {
+                    showPinModal(data.error || "Incorrect PIN. Please try again.");
+                }
+            } catch (err) {
+                showPinModal("Network error verifying PIN. Please try again.");
+            } finally {
+                unlockBtn.disabled = false;
+                unlockBtn.innerHTML = '<span>🔓 Unlock Exam Engine</span>';
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             initPreferredModel();
-            fetchDatabase();
+            checkAuthAndInit();
         });
     </script>
 </body>
