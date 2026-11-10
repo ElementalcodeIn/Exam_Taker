@@ -5,6 +5,8 @@ import hashlib
 from flask import Flask, render_template, request, jsonify, session
 from docx import Document
 from google import genai
+from google.genai import types
+
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ceh-study-secret-session-key-v13")
@@ -338,11 +340,85 @@ SUPPORTED_MODELS = [
     "gemini-3.5-flash"
 ]
 
+# Bounded per-request timeout in milliseconds (default 15s).
+# Configurable via environment variable for flexibility.
+GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "15000"))
+
+
+def get_gemini_client(api_key):
+    """
+    Initializes a Google GenAI Client with an explicit network timeout.
+    This prevents slow upstream responses from blocking Gunicorn worker processes.
+    """
+    try:
+        http_opts = types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)
+    except Exception:
+        http_opts = {"timeout": GEMINI_TIMEOUT_MS}
+    return genai.Client(api_key=api_key, http_options=http_opts)
+
+
+def is_unrecoverable_error(e):
+    """
+    Identifies non-recoverable authentication/permission issues where trying
+    fallback models would be completely futile and waste time.
+    """
+    code = getattr(e, "code", None)
+    if code in (401, 403):
+        return True
+    msg = str(e).lower()
+    if any(keyword in msg for keyword in [
+        "api_key_invalid",
+        "api key not valid",
+        "invalid api key",
+        "permission_denied",
+        "unregistered caller",
+        "consumer suspended"
+    ]):
+        return True
+    if code == 400 and ("api_key" in msg or "invalid key" in msg):
+        return True
+    return False
+
+
+def format_user_friendly_gemini_error(e):
+    """
+    Maps exceptions into safe, actionable messages and HTTP status codes.
+    Never exposes raw secrets, internal paths, or unvetted stack traces.
+    """
+    code = getattr(e, "code", None)
+    raw_msg = str(e).lower()
+
+    if code in (401, 403) or is_unrecoverable_error(e):
+        return (
+            "Invalid Gemini API key or unauthorized access. Please verify the GEMINI_API_KEY in your settings.",
+            401
+        )
+    if code == 429 or "429" in raw_msg or "resource_exhausted" in raw_msg or "quota" in raw_msg:
+        return (
+            "Gemini API rate limit or quota exceeded. Please wait a minute before requesting another explanation.",
+            429
+        )
+    if code == 503 or "503" in raw_msg or "high demand" in raw_msg or "unavailable" in raw_msg:
+        return (
+            "The Gemini AI service is currently experiencing high demand. Please try again in a few moments.",
+            503
+        )
+    if "timeout" in raw_msg or "timed out" in raw_msg or code == 504:
+        return (
+            "The request to Gemini timed out. The AI service is responding slowly; please try again.",
+            504
+        )
+    return (
+        "The Gemini AI service is temporarily unavailable. Please try again shortly.",
+        500
+    )
+
 
 def generate_with_fallback(client, contents, preferred_model="auto"):
     """
     Tries the preferred model first, and automatically falls back to other Flash models
-    if quota (429), high demand (503), or availability issues arise.
+    if quota (429), high demand (503), timeout, or availability issues arise.
+    Aborts immediately without futile fallback on fatal auth/permission errors.
     """
     if preferred_model and preferred_model != "auto" and preferred_model in SUPPORTED_MODELS:
         models_to_try = [preferred_model] + [m for m in SUPPORTED_MODELS if m != preferred_model]
@@ -350,6 +426,8 @@ def generate_with_fallback(client, contents, preferred_model="auto"):
         models_to_try = list(SUPPORTED_MODELS)
 
     errors = []
+    last_exception = None
+
     for model_name in models_to_try:
         try:
             print(f"[*] Calling model: {model_name}...")
@@ -359,22 +437,32 @@ def generate_with_fallback(client, contents, preferred_model="auto"):
             )
             return response.text, model_name
         except Exception as e:
+            last_exception = e
             err_msg = str(e)
-            print(f"[!] Model {model_name} failed: {err_msg}. Trying next fallback...")
+            print(f"[!] Model {model_name} failed: {err_msg}")
             errors.append(f"{model_name}: {err_msg}")
+
+            if is_unrecoverable_error(e):
+                print(f"[!] Unrecoverable auth/permission error encountered. Aborting fallback.")
+                raise e
+
+            print("[*] Attempting next fallback model...")
             continue
 
-    raise RuntimeError("All available Gemini models reached their limit:\n" + "\n".join(errors))
+    raise RuntimeError("All available Gemini models reached their limit or timed out:\n" + "\n".join(errors)) from last_exception
 
 
 @app.route("/api/ai-explain", methods=["POST"])
 def ai_explain():
-    data = request.json
+    data = request.json or {}
     api_key = get_api_key()
     if not api_key:
         return jsonify({"error": "Gemini API key not configured. Click 'API Key Settings' in the top bar first."}), 400
 
     q = data.get("question")
+    if not q or not isinstance(q, dict):
+        return jsonify({"error": "Invalid question data provided."}), 400
+
     user_choice = data.get("userChoice", "None")
     custom_followup = data.get("followUp", "")
     preferred_model = data.get("model", "auto")
@@ -382,16 +470,16 @@ def ai_explain():
     prompt = f"""You are an expert cybersecurity instructor and CEH v13 mentor.
 Break down this exam question clearly and concisely:
 
-Question: {q['question']}
+Question: {q.get('question', '')}
 Options:
-A. {q['options']['A']}
-B. {q['options']['B']}
-C. {q['options']['C']}
-D. {q['options']['D']}
+A. {q.get('options', {}).get('A', '')}
+B. {q.get('options', {}).get('B', '')}
+C. {q.get('options', {}).get('C', '')}
+D. {q.get('options', {}).get('D', '')}
 
 Student's Selected Answer: {user_choice}
-Correct Answer: {q['correctAnswer']}
-Official Note Explanation: {q['explanation']}
+Correct Answer: {q.get('correctAnswer', '')}
+Official Note Explanation: {q.get('explanation', '')}
 """
     if custom_followup:
         prompt += f"\nStudent's Follow-up Question: {custom_followup}\nAnswer the student's follow-up directly and technically."
@@ -405,14 +493,15 @@ Provide a structured breakdown with:
 """
 
     try:
-        client = genai.Client(api_key=api_key)
+        client = get_gemini_client(api_key)
         explanation, used_model = generate_with_fallback(client, prompt, preferred_model=preferred_model)
         return jsonify({
             "explanation": explanation,
             "modelUsed": used_model
         })
     except Exception as e:
-        return jsonify({"error": f"Gemini API Error: {str(e)}"}), 500
+        user_message, status_code = format_user_friendly_gemini_error(e)
+        return jsonify({"error": user_message}), status_code
 
 
 @app.route("/api/transcribe", methods=["POST"])
@@ -442,8 +531,7 @@ def transcribe_audio():
         mime_type = "audio/mp4"
 
     try:
-        from google.genai import types
-        client = genai.Client(api_key=api_key)
+        client = get_gemini_client(api_key)
         audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
         transcript, used_model = generate_with_fallback(
             client,
@@ -455,7 +543,8 @@ def transcribe_audio():
         )
         return jsonify({"transcript": transcript.strip(), "modelUsed": used_model})
     except Exception as e:
-        return jsonify({"error": f"Gemini transcription error: {str(e)}"}), 500
+        user_message, status_code = format_user_friendly_gemini_error(e)
+        return jsonify({"error": f"Transcription error: {user_message}"}), status_code
 
 
 # Initial database preparation

@@ -952,23 +952,61 @@
         async function requestAiExplanation(followUpText, append = false) {
             const body = document.getElementById('aiModalBody');
             const modelToUse = getPreferredModel();
-            const res = await fetch('/api/ai-explain', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    question: activeAiQuestion,
-                    userChoice: activeAiUserChoice,
-                    followUp: followUpText,
-                    model: modelToUse
-                })
-            });
-            const data = await res.json();
-            const loader = document.getElementById('aiFollowLoading');
-            if (loader) loader.remove();
 
-            if (data.error) {
-                body.innerHTML = `<div class="text-rose-400 font-bold">${data.error}</div>`;
-            } else {
+            try {
+                const res = await fetch('/api/ai-explain', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question: activeAiQuestion,
+                        userChoice: activeAiUserChoice,
+                        followUp: followUpText,
+                        model: modelToUse
+                    })
+                });
+
+                // Always remove the follow-up loading indicator once the request completes
+                const loader = document.getElementById('aiFollowLoading');
+                if (loader) loader.remove();
+
+                let data = null;
+                const contentType = res.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    try {
+                        data = await res.json();
+                    } catch (parseErr) {
+                        data = null;
+                    }
+                }
+
+                if (!res.ok) {
+                    let errorMessage = 'AI service temporarily unavailable. Please try again.';
+                    if (data && data.error) {
+                        errorMessage = data.error;
+                    } else if (res.status === 504) {
+                        errorMessage = 'Request timed out waiting for AI response. Please try again.';
+                    } else if (res.status === 503) {
+                        errorMessage = 'AI service is currently experiencing high demand. Please try again in a moment.';
+                    } else if (res.status === 429) {
+                        errorMessage = 'Rate limit reached. Please wait a minute and try again.';
+                    } else if (res.status === 401 || res.status === 403) {
+                        errorMessage = 'Authentication failed. Please verify your Gemini API key in settings.';
+                    }
+
+                    const errorHtml = `<div class="text-rose-400 font-medium p-3 bg-rose-950/40 border border-rose-800/60 rounded-lg">⚠️ ${errorMessage}</div>`;
+                    if (append) {
+                        // Preserve previous question/explanation and append the error under the follow-up
+                        body.innerHTML += `<div class="mt-2">${errorHtml}</div>`;
+                    } else {
+                        body.innerHTML = errorHtml;
+                    }
+                    return;
+                }
+
+                if (!data || !data.explanation) {
+                    throw new Error('Received an empty response from the AI tutor.');
+                }
+
                 if (data.modelUsed) {
                     const badge = document.getElementById('aiModelBadge');
                     if (badge) {
@@ -977,11 +1015,25 @@
                         badge.title = `Answered using ${data.modelUsed}`;
                     }
                 }
-                const html = marked.parse(data.explanation);
+
+                const explanationText = data.explanation || '';
+                const html = (typeof marked !== 'undefined' && marked.parse) ? marked.parse(explanationText) : explanationText;
                 if (append) {
                     body.innerHTML += `<div class="mt-2">${html}</div>`;
                 } else {
                     body.innerHTML = html;
+                }
+            } catch (err) {
+                // Ensure loader is cleaned up even on fetch abort or network failure
+                const loader = document.getElementById('aiFollowLoading');
+                if (loader) loader.remove();
+
+                const errorMsg = err.message || 'Network error connecting to AI tutor. Please check your connection and try again.';
+                const errorHtml = `<div class="text-rose-400 font-medium p-3 bg-rose-950/40 border border-rose-800/60 rounded-lg">⚠️ ${errorMsg}</div>`;
+                if (append) {
+                    body.innerHTML += `<div class="mt-2">${errorHtml}</div>`;
+                } else {
+                    body.innerHTML = errorHtml;
                 }
             }
         }
