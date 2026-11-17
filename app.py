@@ -12,12 +12,38 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ceh-study-secret-session-key-v13")
 
 DB_FILE = "questions.json"
+CACHE_FILE = "explanations_cache.json"
 RAW_NOTES_DIR = "raw_notes"
 CONFIG_FILE = "config.json"
 EXAM_PIN = os.environ.get("EXAM_PIN", "").strip()
 
 os.makedirs(RAW_NOTES_DIR, exist_ok=True)
 os.makedirs("templates", exist_ok=True)
+
+
+def load_cache():
+    """Loads pre-generated AI explanations from persistent disk cache."""
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[!] Warning reading cache file: {e}")
+            return {}
+    return {}
+
+
+def save_cache(cache_data):
+    """Saves AI explanations to persistent disk cache."""
+    try:
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[!] Warning writing cache file: {e}")
+
+
+EXPLANATION_CACHE = load_cache()
+
 
 
 def normalize_text(text):
@@ -335,9 +361,12 @@ def save_api_key():
 
 
 SUPPORTED_MODELS = [
-    "gemini-3.8-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-3.5-flash",
     "gemini-3.7-flash",
-    "gemini-3.5-flash"
+    "gemini-3.8-flash"
 ]
 
 # Bounded per-request timeout in milliseconds (default 15s).
@@ -467,6 +496,26 @@ def ai_explain():
     custom_followup = data.get("followUp", "")
     preferred_model = data.get("model", "auto")
 
+    # Construct persistent cache key: question id/hash + user's answer
+    q_id = q.get("id")
+    if not q_id:
+        q_hash = hashlib.md5(normalize_text(q.get("question", "")).encode("utf-8")).hexdigest()[:10]
+        q_id = f"q-{q_hash}"
+    cache_key = f"{q_id}:{str(user_choice).strip().upper()}"
+
+    # Return immediately from persistent disk cache for standard question breakdowns
+    if not custom_followup and cache_key in EXPLANATION_CACHE:
+        cached_entry = EXPLANATION_CACHE[cache_key]
+        print(f"[*] Serving explanation from cache for key: {cache_key}")
+        return jsonify({
+            "explanation": cached_entry["explanation"],
+            "modelUsed": cached_entry.get("modelUsed", "Gemini") + " (Cached)",
+            "cached": True
+        })
+
+    correct_ans = q.get("correctAnswer", "").strip().upper()
+    student_ans = str(user_choice).strip().upper()
+
     prompt = f"""You are an expert cybersecurity instructor and CEH v13 mentor.
 Break down this exam question clearly and concisely:
 
@@ -484,17 +533,36 @@ Official Note Explanation: {q.get('explanation', '')}
     if custom_followup:
         prompt += f"\nStudent's Follow-up Question: {custom_followup}\nAnswer the student's follow-up directly and technically."
     else:
-        prompt += """
+        if student_ans == correct_ans:
+            prompt += """
 Provide a structured breakdown with:
 1. **Core Technical Concept**: Explain the tool, protocol, or attack vector in plain, practical cybersecurity terms.
 2. **Why the Correct Answer Wins**: Why the correct option is the best technical fit.
-3. **Why Your Choice Was Wrong** (if the student picked the wrong option): Specifically contrast their choice with the right one.
+3. **Real-World / CLI Example**: Show a brief command or defense configuration example if applicable.
+Keep your response concise, sharp, and directly focused on the CEH exam objective (under 350 words).
+"""
+        else:
+            prompt += f"""
+Provide a structured breakdown with:
+1. **Core Technical Concept**: Explain the tool, protocol, or attack vector in plain, practical cybersecurity terms.
+2. **Why the Correct Answer Wins**: Why the correct option is the best technical fit.
+3. **Why Your Choice Was Wrong**: Contrast student choice ({student_ans}) with the correct option ({correct_ans}) clearly.
 4. **Real-World / CLI Example**: Show a brief command or defense configuration example if applicable.
+Keep your response concise, sharp, and directly focused on the CEH exam objective (under 350 words).
 """
 
     try:
         client = get_gemini_client(api_key)
         explanation, used_model = generate_with_fallback(client, prompt, preferred_model=preferred_model)
+
+        # Save standard question explanation to persistent disk cache
+        if not custom_followup and explanation:
+            EXPLANATION_CACHE[cache_key] = {
+                "explanation": explanation,
+                "modelUsed": used_model
+            }
+            save_cache(EXPLANATION_CACHE)
+
         return jsonify({
             "explanation": explanation,
             "modelUsed": used_model
