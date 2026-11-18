@@ -72,7 +72,7 @@ def parse_raw_questions(raw_text, source_name="Manual Import"):
         r'\n\s*B\.\s*(.*?)\s*'
         r'\n\s*C\.\s*(.*?)\s*'
         r'\n\s*D\.\s*(.*?)\s*'
-        r'\n\s*Correct Answer:\s*([A-D])(?:\s*[—\-].*?)?\s*Explanation:\s*(.*?)(?=\n\s*\d+\.\s+|\Z)',
+        r'\n\s*Correct Answer:\s*([A-D])(?:\s*[—\-].*?)?\s*(?:Expanded\s+)?Explanation:\s*(.*?)(?=\n\s*\d+\.\s+|\Z)',
         re.DOTALL
     )
 

